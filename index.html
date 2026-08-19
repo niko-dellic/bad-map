@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0e0f12" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <title>bad-map — semantic low-resolution maps</title>
   </head>
   <body>
@@ -16,13 +21,150 @@
         <strong>bad-map</strong>
         <span id="status">loading vector tiles…</span>
       </header>
-      <aside id="readout">Move over the map to inspect a feature.</aside>
-      <nav>
-        <button id="theme" type="button">light theme</button>
-        <button id="color-mode" type="button">greyscale</button>
-        <button id="cells" type="button">larger cells</button>
-        <button id="labels" type="button">hide labels</button>
-      </nav>
+      <div id="readout" role="status" aria-live="polite">
+        Move over the map to inspect a feature.
+      </div>
+      <aside id="settings" aria-label="Map settings">
+        <div class="panel-title">
+          <strong>settings</strong>
+          <div class="panel-actions">
+            <button id="reset" type="button">reset view</button>
+            <button
+              id="settings-toggle"
+              type="button"
+              aria-expanded="true"
+              aria-label="Collapse settings panel"
+            >
+              collapse
+            </button>
+          </div>
+        </div>
+
+        <section>
+          <h2>Appearance</h2>
+          <label
+            >Theme
+            <select id="theme">
+              <option value="dark">dark</option>
+              <option value="light">light</option>
+            </select></label
+          >
+          <button id="color-mode" type="button">full color</button>
+          <label class="check"
+            ><input id="labels" type="checkbox" checked /> Labels</label
+          >
+          <label
+            >Locale
+            <select id="locale">
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+            </select></label
+          >
+        </section>
+
+        <section>
+          <h2>Cell lattice</h2>
+          <label
+            >Width <output id="cell-width-value">8</output
+            ><input
+              id="cell-width"
+              type="range"
+              min="4"
+              max="16"
+              step="1"
+              value="8"
+          /></label>
+          <label
+            >Height <output id="cell-height-value">16</output
+            ><input
+              id="cell-height"
+              type="range"
+              min="8"
+              max="32"
+              step="1"
+              value="16"
+          /></label>
+          <label
+            >Dot size <output id="dot-size-value">2</output
+            ><input
+              id="dot-size"
+              type="range"
+              min="1"
+              max="4"
+              step="0.25"
+              value="2"
+          /></label>
+          <button id="cells" type="button">larger cell preset</button>
+        </section>
+
+        <section>
+          <h2>Camera</h2>
+          <label
+            >Projection
+            <select id="projection">
+              <option value="screen">screen lattice</option>
+              <option value="surface">3D surface</option>
+            </select></label
+          >
+          <label class="check"
+            ><input id="rotation" type="checkbox" /> Enable rotation</label
+          >
+          <label
+            >Bearing <output id="bearing-value">0°</output
+            ><input
+              id="bearing"
+              type="range"
+              min="-180"
+              max="180"
+              step="1"
+              value="0"
+          /></label>
+          <label
+            >Pitch <output id="pitch-value">0°</output
+            ><input
+              id="pitch"
+              type="range"
+              min="0"
+              max="70"
+              step="1"
+              value="0"
+              disabled
+          /></label>
+        </section>
+
+        <section>
+          <h2>Semantic packs</h2>
+          <div id="packs" class="checks"></div>
+        </section>
+
+        <section>
+          <h2>Sources</h2>
+          <label
+            >Base TileJSON
+            <input
+              id="base-source"
+              type="url"
+              value="https://tiles.openfreemap.org/planet"
+          /></label>
+          <label
+            >Weather TileJSON
+            <input
+              id="weather-source"
+              type="url"
+              placeholder="optional OpenMapTiles source"
+          /></label>
+          <label
+            >Weather time key
+            <input
+              id="weather-time"
+              type="text"
+              placeholder="for {time} templates"
+          /></label>
+          <button id="apply-sources" type="button">apply sources</button>
+        </section>
+      </aside>
     </div>
     <script type="module" src="/demo/main.ts"></script>
   </body>

@@ -38,6 +38,9 @@ interface ProjectedLine {
 }
 
 function featureKind(layer: string): FeatureRecord["kind"] {
+  if (layer === "weather_point") return "poi";
+  if (layer === "weather_line" || layer === "contour") return "line";
+  if (layer === "weather") return "fill";
   if (["water", "water_name"].includes(layer)) return "water";
   if (["park", "landcover", "landuse"].includes(layer)) return "park";
   if (layer === "place") return "place";
@@ -70,6 +73,8 @@ function projectFeatures(
       ),
       name: localizedName(feature.properties, state.locale),
       sourceLayer: feature.sourceLayer,
+      sourceId: feature.sourceId ?? "base",
+      packId: feature.packId ?? "streets",
       properties: feature.properties,
     };
     const parts = feature.geometry.map((part) =>
@@ -101,7 +106,7 @@ function fillRings(
   classes: Uint8Array,
   owners: Uint32Array,
   rings: readonly Point[][],
-  value: FillClass,
+  value: number,
   owner: number,
   width: number,
   height: number,
@@ -159,6 +164,62 @@ interface LineBuffers {
   rank: Int16Array;
   owner: Uint32Array;
   ribbon: Uint8Array;
+}
+
+function reduceScalar(
+  dots: Uint8Array,
+  columns: number,
+  rows: number,
+): Uint8Array {
+  const output = new Uint8Array(columns * rows);
+  const dotWidth = columns * 2;
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      let sum = 0;
+      let count = 0;
+      for (let dy = 0; dy < 4; dy += 1) {
+        for (let dx = 0; dx < 2; dx += 1) {
+          const value = dots[(row * 4 + dy) * dotWidth + column * 2 + dx]!;
+          if (value) {
+            sum += value;
+            count += 1;
+          }
+        }
+      }
+      output[row * columns + column] = count ? Math.round(sum / count) : 0;
+    }
+  }
+  return output;
+}
+
+function reduceOwners(
+  dots: Uint32Array,
+  columns: number,
+  rows: number,
+): Uint32Array {
+  const output = new Uint32Array(columns * rows);
+  const dotWidth = columns * 2;
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const counts = new Map<number, number>();
+      for (let dy = 0; dy < 4; dy += 1) {
+        for (let dx = 0; dx < 2; dx += 1) {
+          const owner = dots[(row * 4 + dy) * dotWidth + column * 2 + dx]!;
+          if (owner) counts.set(owner, (counts.get(owner) ?? 0) + 1);
+        }
+      }
+      let winner = 0;
+      let count = 0;
+      for (const [owner, candidateCount] of counts) {
+        if (candidateCount > count) {
+          winner = owner;
+          count = candidateCount;
+        }
+      }
+      output[row * columns + column] = winner;
+    }
+  }
+  return output;
 }
 
 function setDot(
@@ -419,7 +480,41 @@ export function rasterizeView(
   const dotOwners = new Uint32Array(dotWidth * dotHeight);
   const fills: ProjectedFill[] = [];
   const lines: ProjectedLine[] = [];
+  const scalarDots = new Uint8Array(dotWidth * dotHeight);
+  const scalarOwners = new Uint32Array(dotWidth * dotHeight);
   for (const feature of projected) {
+    const decodedFeature = decoded[feature.record.id - 1];
+    const numeric = decodedFeature?.numeric;
+    const numericValue = numeric
+      ? Number(feature.properties[numeric.property])
+      : Number.NaN;
+    if (
+      feature.type === 3 &&
+      numeric &&
+      Number.isFinite(numericValue) &&
+      numeric.max > numeric.min
+    ) {
+      const value =
+        1 +
+        Math.round(
+          Math.max(
+            0,
+            Math.min(
+              1,
+              (numericValue - numeric.min) / (numeric.max - numeric.min),
+            ),
+          ) * 254,
+        );
+      fillRings(
+        scalarDots,
+        scalarOwners,
+        feature.parts,
+        value,
+        feature.record.id,
+        dotWidth,
+        dotHeight,
+      );
+    }
     if (feature.type === 3) {
       const fillClass = fillClassFor(
         feature.sourceLayer,
@@ -433,7 +528,15 @@ export function rasterizeView(
         fills.push({ feature, fillClass });
     }
     if (feature.type === 2) {
-      const styleKey = styleForLine(feature.sourceLayer, feature.properties);
+      const adapter = decoded[feature.record.id - 1]?.adapter;
+      const styleKey =
+        adapter === "weather" && feature.sourceLayer === "weather_line"
+          ? "route"
+          : adapter === "topographic" && feature.sourceLayer === "contour"
+            ? "path"
+            : adapter === "transit" && feature.sourceLayer === "transportation"
+              ? "route"
+              : styleForLine(feature.sourceLayer, feature.properties);
       if (styleKey && LINE_STYLES[styleKey].weights[band])
         lines.push({ feature, styleKey });
     }
@@ -553,6 +656,9 @@ export function rasterizeView(
   }
 
   const reduced = reduceFills(dotClasses, dotOwners, columns, rows);
+  const scalarOwner = reduceOwners(scalarOwners, columns, rows);
+  for (let i = 0; i < reduced.owner.length; i += 1)
+    if (scalarOwner[i]) reduced.owner[i] = scalarOwner[i]!;
   for (let i = 0; i < reduced.owner.length; i += 1)
     if (lineBuffers.owner[i]) reduced.owner[i] = lineBuffers.owner[i]!;
   const labels = buildLabels(
@@ -576,6 +682,7 @@ export function rasterizeView(
     lineTone: lineBuffers.tone,
     owner: reduced.owner,
     ribbon: lineBuffers.ribbon,
+    scalar: reduceScalar(scalarDots, columns, rows),
     labels,
     features: records,
     warnings,

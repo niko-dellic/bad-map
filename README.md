@@ -1,11 +1,11 @@
 # bad-map
 
-A semantic low-resolution street basemap for MapLibre GL JS.
+A semantic low-resolution cartography toolkit for MapLibre GL JS.
 
-`bad-map` brings a semantic terminal-map grammar to the browser: solid coarse
-fills, roads rasterized onto a fixed 2×4 Braille-dot lattice, one ranked ink
-per character cell, and sparse deterministic labels. It operates on vector
-tile semantics, not on a screenshot of another basemap.
+`bad-map` renders vector-tile meaning instead of pixelating an existing map.
+Coarse area fills, ranked square-dot lines, scalar data, and labels are composed
+independently, which leaves ordinary MapLibre and deck.gl layers crisp and
+interactive. Greyscale is the default; full color remains one method call away.
 
 ## Install
 
@@ -13,117 +13,160 @@ tile semantics, not on a screenshot of another basemap.
 npm install bad-map maplibre-gl
 ```
 
-MapLibre GL JS is a peer dependency. The default source is the public,
-keyless OpenFreeMap planet tiles.
+MapLibre GL JS is a peer dependency. The default keyless source is OpenFreeMap.
 
-## Usage
+## Quick start
 
 ```ts
 import { Map } from "maplibre-gl";
-import { LowResBasemap } from "bad-map";
+import { LowResBasemap, streets, transit } from "bad-map";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 const map = new Map({
   container: "map",
   center: [-74.006, 40.7128],
   zoom: 14,
-  bearing: 0,
-  pitch: 0,
   style: { version: 8, sources: {}, layers: [] },
 });
 
 const basemap = new LowResBasemap({
   source: { tileJSON: "https://tiles.openfreemap.org/planet" },
-  theme: "dark",
-  colorMode: "color",
+  layers: [streets(), transit({ enabled: false, priority: 20 })],
+  colorMode: "greyscale",
   cell: { width: 8, height: 16, dotSize: 2 },
-  locale: "en",
 });
 
 await basemap.addTo(map);
+basemap.setLayerVisible("transit", true);
 ```
 
-The package adds two stable custom layers:
+## Layer ordering
+
+Five stable IDs divide the render stack:
 
 ```ts
-basemap.layerIds.base; // "bad-map-base"
-basemap.layerIds.labels; // "bad-map-labels"
+basemap.layerIds.base; // fills and low-resolution linework
+basemap.layerIds.data; // application data boundary
+basemap.layerIds.markers; // marker boundary
+basemap.layerIds.labels; // package labels
+basemap.layerIds.interaction; // top interaction boundary
 ```
 
-Put ordinary MapLibre or interleaved deck.gl visualizations before the label
-layer to retain paper-map ordering:
+Insert a native visualization immediately below the marker boundary to keep it
+above the cartography and below labels:
 
 ```ts
-map.addLayer(dataLayer, basemap.layerIds.labels);
+map.addLayer(dataLayer, basemap.layerIds.markers);
 ```
 
-## API
+Color modes only affect package-owned layers.
 
-`LowResBasemap` is framework-agnostic and attaches to an existing MapLibre
-map. It provides:
+## Semantic packs and sources
+
+Built-in serializable descriptors are available for `streets`, `transit`,
+`topographic`, `weather`, `political`, `marine`, and `landuse`. Each descriptor
+selects source layers and a worker-side adapter; no callbacks cross the worker
+boundary.
+
+```ts
+import { LowResBasemap, streets, topographic, weather } from "bad-map";
+
+const basemap = new LowResBasemap({
+  sources: {
+    base: { tileJSON: "/tiles/base.json", maxCachedTiles: 96 },
+    terrain: { tileJSON: "/tiles/terrain.json" },
+    forecast: {
+      tileJSON: "/tiles/weather.json",
+      timeKey: "2026-08-19T12:00Z",
+      maxConcurrentRequests: 4,
+      retryCount: 2,
+    },
+  },
+  layers: [
+    streets(),
+    topographic({ source: "terrain", priority: 10 }),
+    weather({ source: "forecast", priority: 30 }),
+  ],
+});
+
+basemap.setSourceTime("forecast", "2026-08-19T13:00Z");
+```
+
+Tile templates may contain `{time}`. Numeric polygon properties declared by a
+pack are quantized into a compact scalar texture; the built-in weather and
+topographic factories provide defaults that can be overridden through their
+`numeric` option. Sources currently need MVT data, with OpenMapTiles property
+conventions for the built-in adapters.
+
+## Camera modes
+
+`screen` is the default. Dots stay square and locked to the viewport while pan,
+zoom, and bearing changes reproject the most recent worker frame. Pitch remains
+zero.
+
+```ts
+const basemap = new LowResBasemap({ camera: { rotation: true } });
+```
+
+`surface` is an experimental low-resolution 3D mode. The semantic frame is
+placed on a flat Web Mercator plane and transformed with MapLibre's public
+custom-layer camera matrix, so dots and labels foreshorten during pitch and
+orbiting.
+
+```ts
+basemap
+  .setProjectionMode("surface")
+  .setCamera({ rotation: true, pitch: true, maxPitch: 70 });
+```
+
+Terrain elevation and billboard labels are not yet part of surface mode. The
+flat plane, bearing/pitch controls, and geographic feature picking are usable
+today without private MapLibre APIs.
+
+## Runtime API
+
+`LowResBasemap` provides:
 
 - `addTo(map)` and `remove()`
-- `setTheme(theme)`
-- `setColorMode("color" | "greyscale")`
-- `setCell({ width, height, dotSize })`
-- `setLocale(locale)`
-- `setLabelsVisible(visible)`
-- `setSource(source)` and `refresh()`
-- `queryFeatures(point)`
-- typed `load`, `render`, `error`, `featureenter`, `featureleave`, and
-  `featureclick` events, plus `stylechange` for palette updates
+- `setTheme(theme)` and `setColorMode("color" | "greyscale")`
+- `setCell(...)`, `setLocale(...)`, and `setLabelsVisible(...)`
+- `setSource(...)`, `setSources(...)`, and `setSourceTime(...)`
+- `setLayers(...)`, `getLayers()`, and `setLayerVisible(...)`
+- `setProjectionMode(...)` and `setCamera(...)`
+- `setSelectedFeature(...)`, `queryFeatures(...)`, and `refresh()`
+- typed load, render, error, feature, selection, style, layer, time, and
+  projection events
 
-The built-in themes are `dark` and `light`. Custom themes use the exported
-`LowResTheme` interface.
+Hover and persistent selection use the transferable owner texture. Query
+results include `sourceId` and `packId`, and `featureMatches` provides a helper
+for filtering those results.
 
-Greyscale is independent of the selected theme and can be changed without
-refetching tiles or rerunning semantic rasterization:
+## Rendering pipeline
 
-```ts
-basemap.setColorMode("greyscale");
-basemap.setColorMode("color");
-```
+1. A worker discovers named TileJSON sources, bounds concurrency, retries
+   failures, and maintains per-source decoded LRUs.
+2. Enabled packs normalize and deterministically order semantic features.
+3. Polygons become categorical or scalar dot grids; water derives coastlines.
+4. Integer line paths compete by semantic rank inside each character cell.
+5. Compact typed buffers are transferred to a WebGL 2 compositor.
+6. Labels are independently budgeted and rendered above consumer data.
 
-Only package-owned base and label layers are recolored. MapLibre and deck.gl
-visualizations inserted between them retain their original colors.
+During interaction, the latest buffers are reprojected while the worker
+coalesces obsolete requests. `moveend` always requests an exact frame.
 
-The source must use the OpenMapTiles layer schema. Serializable request
-headers and credential options can be passed through `source.request`.
+## Constraints
 
-## How rendering works
-
-1. A dedicated worker discovers TileJSON, selects at most 16 visible MVT
-   tiles, fetches them, and maintains a decoded LRU.
-2. Polygons become a categorical 2×4-dot grid. Water is snapshotted before
-   buildings, and its exact mask produces the coastline.
-3. Bresenham strokes compete by semantic rank inside each character cell.
-4. The worker transfers compact fill, Braille mask, line class, tunnel tone,
-   owner, and ribbon buffers.
-5. A WebGL 2 fragment shader composes square dots and solid fills directly.
-   It never samples MapLibre's completed framebuffer.
-6. Labels are independently budgeted and rendered in a transparent custom
-   layer, allowing application data to sit between cartography and type.
-
-During pan and zoom interactions, the latest completed semantic frame is
-reprojected in the compositor while the worker prepares newer views. Dots stay
-locked to the screen lattice, zooming labels fade while stale, and `moveend`
-always requests an exact frame.
-
-## V1 constraints
-
-- Street mode only
-- North-up, unpitched Web Mercator
-- OpenMapTiles-compatible sources
-- WebGL 2
-
-By default `addTo` sets pitch and bearing to zero, disables rotation, and
-restores the previous rotation-handler state on removal.
+- WebGL 2 and Web Mercator
+- MVT sources for built-in packs
+- Screen mode supports bearing but not pitch
+- Surface mode is a flat-plane experimental renderer, without terrain
+- Numeric data is categorical/quantized rather than a general raster engine
 
 ## Attribution
 
-The default setup adds the required OpenFreeMap, OpenMapTiles, and
-OpenStreetMap attribution control. Do not disable it unless the application
-provides equivalent visible attribution elsewhere.
+Attribution from named sources is deduplicated into MapLibre's attribution
+control. Do not disable it unless equivalent visible attribution is supplied by
+the host application.
 
 ## Development
 
@@ -137,5 +180,5 @@ npm run test:e2e
 npm run dev
 ```
 
-See [NEXT_STEPS.md](./NEXT_STEPS.md) for the proposed motion, 3D/orbiting,
-multi-source, and non-street layer roadmap.
+See [NEXT_STEPS.md](./NEXT_STEPS.md) for implementation status and remaining
+production-depth work around terrain, animated fields, and dense picking.

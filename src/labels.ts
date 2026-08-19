@@ -197,7 +197,7 @@ function candidates(
     }
 
     if (
-      ["poi", "mountain_peak", "aerodrome_label"].includes(
+      ["poi", "mountain_peak", "aerodrome_label", "weather_point"].includes(
         feature.sourceLayer,
       ) &&
       band >= 6

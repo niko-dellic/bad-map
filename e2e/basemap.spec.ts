@@ -61,7 +61,7 @@ test("toggles greyscale without worker rasterization or overlay recoloring", asy
 }) => {
   const before = await diagnostics(page);
   await page.locator("#color-mode").click();
-  await expect(page.locator("#color-mode")).toHaveText("full color");
+  await expect(page.locator("#color-mode")).toHaveText("greyscale");
   await page.waitForTimeout(150);
   const after = await diagnostics(page);
   expect(after.styleEvents).toBe(before.styleEvents + 1);
@@ -77,6 +77,97 @@ test("toggles greyscale without worker rasterization or overlay recoloring", asy
     ).__badMapDemo.map.getPaintProperty("demo-points", "circle-color"),
   );
   expect(overlayColor).toBe("#ff6688");
+});
+
+test("exposes stable slots and switches between bearing and surface cameras", async ({
+  page,
+}) => {
+  const slots = await page.evaluate(() => {
+    const { map, basemap } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { getLayer(id: string): unknown };
+          basemap: {
+            layerIds: Record<string, string>;
+            getLayers(): { id: string }[];
+          };
+        };
+      }
+    ).__badMapDemo;
+    return {
+      ids: basemap.layerIds,
+      present: Object.values(basemap.layerIds).every((id) => map.getLayer(id)),
+      packs: basemap.getLayers().map((pack) => pack.id),
+    };
+  });
+  expect(slots.present).toBe(true);
+  expect(slots.ids).toMatchObject({
+    data: "bad-map-data",
+    markers: "bad-map-markers",
+    interaction: "bad-map-interaction",
+  });
+  expect(slots.packs).toEqual(
+    expect.arrayContaining(["streets", "transit", "weather"]),
+  );
+
+  await page.locator("#rotation").check();
+  await page.locator("#bearing").fill("32");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as typeof window & {
+            __badMapDemo: { map: { getBearing(): number } };
+          }
+        ).__badMapDemo.map.getBearing(),
+      ),
+    )
+    .toBeCloseTo(32, 0);
+
+  await page.locator("#projection").selectOption("surface");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as typeof window & {
+            __badMapDemo: { map: { getPitch(): number } };
+          }
+        ).__badMapDemo.map.getPitch(),
+      ),
+    )
+    .toBeGreaterThan(20);
+  await expect(page.locator("#pitch")).toBeEnabled();
+});
+
+test("collapses the settings panel without hiding hover information", async ({
+  page,
+}) => {
+  const readout = page.locator("#readout");
+  const settings = page.locator("#settings");
+  const header = page.locator("header");
+
+  await expect(settings.locator("#readout")).toHaveCount(0);
+  const [readoutBox, headerBox] = await Promise.all([
+    readout.boundingBox(),
+    header.boundingBox(),
+  ]);
+  expect(readoutBox).not.toBeNull();
+  expect(headerBox).not.toBeNull();
+  expect(readoutBox!.x).toBeLessThan(40);
+  expect(readoutBox!.y).toBeGreaterThan(headerBox!.y + headerBox!.height);
+
+  await page.locator("#settings-toggle").click();
+  await expect(settings).toHaveClass(/is-collapsed/);
+  await expect(page.locator("#settings-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(settings.locator("section").first()).toBeHidden();
+  await expect(readout).toBeVisible();
+
+  await page.locator("#settings-toggle").click();
+  await expect(settings).not.toHaveClass(/is-collapsed/);
+  await expect(settings.locator("section").first()).toBeVisible();
 });
 
 test("keeps producing exact frames after pan, zoom, and resize", async ({

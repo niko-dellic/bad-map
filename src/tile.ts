@@ -1,7 +1,11 @@
 import { VectorTile } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
 import type { TileKey } from "./geometry";
-import type { LowResError, LowResSource } from "./types";
+import type {
+  LowResError,
+  LowResLayerPackDescriptor,
+  LowResSource,
+} from "./types";
 
 export type GeometryPoint = readonly [number, number];
 
@@ -12,6 +16,10 @@ export interface DecodedFeature {
   type: 1 | 2 | 3;
   properties: Record<string, string | number | boolean | null>;
   geometry: GeometryPoint[][];
+  sourceId?: string;
+  packId?: string;
+  adapter?: string;
+  numeric?: LowResLayerPackDescriptor["numeric"];
 }
 
 export interface TileJSON {
@@ -38,11 +46,15 @@ const INCLUDED_LAYERS = new Set([
   "aerodrome_label",
 ]);
 
-export function decodeMvt(data: ArrayBuffer, tile: TileKey): DecodedFeature[] {
+export function decodeMvt(
+  data: ArrayBuffer,
+  tile: TileKey,
+  includedLayers: ReadonlySet<string> = INCLUDED_LAYERS,
+): DecodedFeature[] {
   const decoded = new VectorTile(new PbfReader(new Uint8Array(data)));
   const output: DecodedFeature[] = [];
   for (const [sourceLayer, layer] of Object.entries(decoded.layers)) {
-    if (!INCLUDED_LAYERS.has(sourceLayer)) continue;
+    if (!includedLayers.has(sourceLayer)) continue;
     for (let index = 0; index < layer.length; index += 1) {
       const feature = layer.feature(index);
       if (feature.type !== 1 && feature.type !== 2 && feature.type !== 3)
@@ -112,11 +124,17 @@ export class TileLoader {
   #tileJSON: TileJSON | undefined;
   #raw: Lru<string, ArrayBuffer>;
   #decoded: Lru<string, DecodedFeature[]>;
+  #includedLayers: ReadonlySet<string>;
 
-  constructor(source: LowResSource, maxCachedTiles = 96) {
+  constructor(
+    source: LowResSource,
+    maxCachedTiles = 96,
+    includedLayers: ReadonlySet<string> = INCLUDED_LAYERS,
+  ) {
     this.#source = source;
     this.#raw = new Lru(maxCachedTiles);
     this.#decoded = new Lru(maxCachedTiles);
+    this.#includedLayers = includedLayers;
   }
 
   setSource(source: LowResSource): void {
@@ -124,6 +142,10 @@ export class TileLoader {
     this.#tileJSON = undefined;
     this.#raw.clear();
     this.#decoded.clear();
+  }
+
+  setTimeKey(timeKey: string | number): void {
+    this.#source = { ...this.#source, timeKey };
   }
 
   async metadata(signal?: AbortSignal): Promise<TileJSON> {
@@ -152,15 +174,21 @@ export class TileLoader {
     signal?: AbortSignal,
   ): Promise<{ features: DecodedFeature[]; warnings: LowResError[] }> {
     const metadata = await this.metadata(signal);
-    const warnings: LowResError[] = [];
-    const batches = await Promise.all(
-      keys.map(async (key): Promise<DecodedFeature[]> => {
-        const cacheKey = `${key.z}/${key.x}/${key.y}`;
+    const warningSlots: Array<LowResError | undefined> = new Array(keys.length);
+    const batches = await mapConcurrent(
+      keys,
+      this.#source.maxConcurrentRequests ?? 6,
+      async (key, keyIndex): Promise<DecodedFeature[]> => {
+        const tilePath = `${key.z}/${key.x}/${key.y}`;
+        const cacheKey =
+          this.#source.timeKey === undefined
+            ? tilePath
+            : `${String(this.#source.timeKey)}:${tilePath}`;
         const cached = this.#decoded.get(cacheKey);
         if (cached) return cached;
         const raw = this.#raw.get(cacheKey);
         if (raw) {
-          const decoded = decodeMvt(raw, key);
+          const decoded = decodeMvt(raw, key, this.#includedLayers);
           this.#decoded.set(cacheKey, decoded);
           return decoded;
         }
@@ -169,30 +197,70 @@ export class TileLoader {
         const url = template
           .replace("{z}", String(key.z))
           .replace("{x}", String(key.x))
-          .replace("{y}", String(key.y));
-        try {
-          const response = await fetch(url, {
-            ...this.#source.request,
-            ...(signal ? { signal } : {}),
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const data = await response.arrayBuffer();
-          const decoded = data.byteLength ? decodeMvt(data, key) : [];
-          this.#raw.set(cacheKey, data);
-          this.#decoded.set(cacheKey, decoded);
-          return decoded;
-        } catch (cause) {
-          if (signal?.aborted) throw cause;
-          warnings.push({
-            code: "tile",
-            message: `Unable to read vector tile ${cacheKey}`,
-            fatal: false,
-            cause,
-          });
-          return [];
+          .replace("{y}", String(key.y))
+          .replace(
+            "{time}",
+            encodeURIComponent(String(this.#source.timeKey ?? "")),
+          );
+        let lastCause: unknown;
+        for (
+          let attempt = 0;
+          attempt <= Math.max(0, this.#source.retryCount ?? 1);
+          attempt += 1
+        ) {
+          try {
+            const response = await fetch(url, {
+              ...this.#source.request,
+              ...(signal ? { signal } : {}),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.arrayBuffer();
+            const decoded = data.byteLength
+              ? decodeMvt(data, key, this.#includedLayers)
+              : [];
+            this.#raw.set(cacheKey, data);
+            this.#decoded.set(cacheKey, decoded);
+            return decoded;
+          } catch (cause) {
+            if (signal?.aborted) throw cause;
+            lastCause = cause;
+          }
         }
-      }),
+        warningSlots[keyIndex] = {
+          code: "tile",
+          message: `Unable to read vector tile ${tilePath}`,
+          fatal: false,
+          cause: lastCause,
+        };
+        return [];
+      },
     );
-    return { features: batches.flat(), warnings };
+    return {
+      features: batches.flat(),
+      warnings: warningSlots.filter(
+        (warning): warning is LowResError => warning !== undefined,
+      ),
+    };
   }
+}
+
+async function mapConcurrent<T, U>(
+  values: readonly T[],
+  limit: number,
+  transform: (value: T, index: number) => Promise<U>,
+): Promise<U[]> {
+  const output = new Array<U>(values.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(values.length, Math.max(1, Math.floor(limit))) },
+    async () => {
+      while (cursor < values.length) {
+        const index = cursor;
+        cursor += 1;
+        output[index] = await transform(values[index]!, index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return output;
 }

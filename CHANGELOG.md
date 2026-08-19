@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+
+- Named MVT sources with per-source caches, concurrency, retries, attribution,
+  typed errors, and temporal `{time}` keys.
+- Serializable street, transit, topographic, weather, political, marine, and
+  land-use packs with deterministic priority composition.
+- Quantized numeric textures for weather and elevation-style polygon data.
+- Stable application-data, marker, and interaction insertion slots.
+- Pack-aware feature queries, GPU hover highlighting, and persistent selection.
+- Bearing-aware screen projection and an experimental pitched flat-surface mode.
+- A side-panel demo for appearance, cell, camera, pack, and source options.
+
+### Changed
+
+- Greyscale is now the default color mode.
+- Feature results and source errors include source and pack provenance.
+
 ## 0.2.0
 
 ### Added

@@ -2,18 +2,22 @@
 export { LowResBasemap } from "./low-res-basemap";
 export { DARK_THEME, LIGHT_THEME } from "./theme";
 export { composeTheme, greyscaleColor, relativeLuminance } from "./theme";
+export { featureMatches, landuse, marine, political, streets, topographic, transit, weather, } from "./packs";
 export { FillClass, LabelInk, LineClass, bandFor, effectiveStyleZoom, sourceZoom, } from "./style";
-export type { BuiltinThemeName, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResSource, LowResTheme, RGB, } from "./types";
+export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResCameraOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTheme, RGB, } from "./types";
 
 // dist/low-res-basemap.d.ts
 import { type Map as MapLibreMap, type PointLike } from "maplibre-gl";
-import type { CellGeometry, LowResBasemapOptions, LowResColorMode, LowResEventMap, LowResFeature, LowResSource } from "./types";
+import type { CellGeometry, LowResBasemapOptions, LowResColorMode, LowResEventMap, LowResFeature, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource } from "./types";
 type Listener<K extends keyof LowResEventMap> = (event: LowResEventMap[K]) => void;
 export declare class LowResBasemap {
     #private;
     readonly layerIds: {
         readonly base: "bad-map-base";
+        readonly data: "bad-map-data";
+        readonly markers: "bad-map-markers";
         readonly labels: "bad-map-labels";
+        readonly interaction: "bad-map-interaction";
     };
     constructor(options?: LowResBasemapOptions);
     addTo(map: MapLibreMap): Promise<this>;
@@ -23,9 +27,17 @@ export declare class LowResBasemap {
     setCell(cell: Partial<CellGeometry>): this;
     setLocale(locale: string): this;
     setLabelsVisible(visible: boolean): this;
+    setProjectionMode(mode: LowResProjectionMode): this;
+    setCamera(options: LowResBasemapOptions["camera"]): this;
     setSource(source: LowResSource): this;
+    setSources(sources: Record<string, LowResSource>): this;
+    setLayers(layers: LowResLayerPackDescriptor[]): this;
+    setSourceTime(sourceId: string, timeKey: string | number): this;
+    setLayerVisible(id: string, visible: boolean): this;
+    getLayers(): LowResLayerPackDescriptor[];
     refresh(): this;
     queryFeatures(point: PointLike): LowResFeature[];
+    setSelectedFeature(feature?: LowResFeature): this;
     on<K extends keyof LowResEventMap>(type: K, listener: Listener<K>): this;
     off<K extends keyof LowResEventMap>(type: K, listener: Listener<K>): this;
 }

@@ -15,6 +15,8 @@ import type { RasterViewState } from "../src/types";
 const state: RasterViewState = {
   center: { lng: 0, lat: 0 },
   zoom: 5,
+  bearing: 0,
+  pitch: 0,
   width: 800,
   height: 400,
   pixelRatio: 1,
@@ -69,8 +71,28 @@ describe("geometry", () => {
 
   it("maps an unchanged camera to identical frame pixels", () => {
     const transform = reprojectionTransform(state, state);
-    expect(transform).toEqual({ scale: 1, offset: [0, 0], zoomDelta: 0 });
+    expect(transform).toEqual({
+      scale: 1,
+      matrix: [1, 0, -0, 1],
+      offset: [0, 0],
+      zoomDelta: 0,
+      bearingDelta: 0,
+    });
     expect(reprojectPoint([123, 45], transform)).toEqual([123, 45]);
+  });
+
+  it("reprojects bearing changes around the viewport center", () => {
+    const current = { ...state, bearing: 90 };
+    const transform = reprojectionTransform(state, current);
+    expect(
+      reprojectPoint([state.width / 2, state.height / 2], transform),
+    ).toEqual([state.width / 2, state.height / 2]);
+    const east = reprojectPoint(
+      [state.width / 2 + 10, state.height / 2],
+      transform,
+    );
+    expect(east[0]).toBeCloseTo(state.width / 2);
+    expect(east[1]).toBeCloseTo(state.height / 2 + 10);
   });
 
   it("reprojects panned and zoomed cameras through Web Mercator", () => {

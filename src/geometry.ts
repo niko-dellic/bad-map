@@ -24,9 +24,12 @@ export function worldToLngLat(x: number, y: number): Point {
 export interface ReprojectionTransform {
   /** Multiplier from current CSS pixels to pixels in the completed frame. */
   scale: number;
+  /** Column-major 2×2 transform from current pixels to frame pixels. */
+  matrix: readonly [number, number, number, number];
   /** Frame-space offset after applying scale. */
   offset: Point;
   zoomDelta: number;
+  bearingDelta: number;
 }
 
 export function reprojectionTransform(
@@ -43,15 +46,32 @@ export function reprojectionTransform(
   while (deltaX < -0.5) deltaX += 1;
   const scale = 2 ** (frame.zoom - current.zoom);
   const frameWorldSize = 512 * 2 ** frame.zoom;
+  const bearingDelta = current.bearing - frame.bearing;
+  const angle = (bearingDelta * Math.PI) / 180;
+  const cos = Math.cos(angle) * scale;
+  const sin = Math.sin(angle) * scale;
+  const matrix = [cos, sin, -sin, cos] as const;
+  const currentHalf: Point = [current.width / 2, current.height / 2];
+  const rotatedHalf: Point = [
+    matrix[0] * currentHalf[0] + matrix[2] * currentHalf[1],
+    matrix[1] * currentHalf[0] + matrix[3] * currentHalf[1],
+  ];
+  const centerAngle = (-frame.bearing * Math.PI) / 180;
+  const centerDx = deltaX * frameWorldSize;
+  const centerDy = (currentY - frameY) * frameWorldSize;
+  const centerOffset: Point = [
+    Math.cos(centerAngle) * centerDx - Math.sin(centerAngle) * centerDy,
+    Math.sin(centerAngle) * centerDx + Math.cos(centerAngle) * centerDy,
+  ];
   return {
     scale,
+    matrix,
     offset: [
-      deltaX * frameWorldSize + frame.width / 2 - (current.width / 2) * scale,
-      (currentY - frameY) * frameWorldSize +
-        frame.height / 2 -
-        (current.height / 2) * scale,
+      centerOffset[0] + frame.width / 2 - rotatedHalf[0],
+      centerOffset[1] + frame.height / 2 - rotatedHalf[1],
     ],
     zoomDelta: current.zoom - frame.zoom,
+    bearingDelta,
   };
 }
 
@@ -60,8 +80,12 @@ export function reprojectPoint(
   transform: ReprojectionTransform,
 ): Point {
   return [
-    point[0] * transform.scale + transform.offset[0],
-    point[1] * transform.scale + transform.offset[1],
+    point[0] * transform.matrix[0] +
+      point[1] * transform.matrix[2] +
+      transform.offset[0],
+    point[0] * transform.matrix[1] +
+      point[1] * transform.matrix[3] +
+      transform.offset[1],
   ];
 }
 
@@ -83,8 +107,12 @@ export function projectTilePoint(
   while (worldX - centerX > 0.5) worldX -= 1;
   while (worldX - centerX < -0.5) worldX += 1;
   const worldSize = 512 * 2 ** state.zoom;
-  const screenX = (worldX - centerX) * worldSize + state.width / 2;
-  const screenY = (worldY - centerY) * worldSize + state.height / 2;
+  const dx = (worldX - centerX) * worldSize;
+  const dy = (worldY - centerY) * worldSize;
+  const angle = (-state.bearing * Math.PI) / 180;
+  const screenX = Math.cos(angle) * dx - Math.sin(angle) * dy + state.width / 2;
+  const screenY =
+    Math.sin(angle) * dx + Math.cos(angle) * dy + state.height / 2;
   return [screenX / (state.cell.width / 2), screenY / (state.cell.height / 4)];
 }
 
@@ -168,8 +196,13 @@ export function visibleTiles(
   let z = Math.max(0, Math.floor(zoom));
   const [cx, cy] = lngLatToWorld(state.center.lng, state.center.lat);
   const worldSize = 512 * 2 ** state.zoom;
-  const halfX = state.width / 2 / worldSize;
-  const halfY = state.height / 2 / worldSize;
+  const rawHalfX = state.width / 2 / worldSize;
+  const rawHalfY = state.height / 2 / worldSize;
+  const angle = (state.bearing * Math.PI) / 180;
+  const halfX =
+    Math.abs(Math.cos(angle)) * rawHalfX + Math.abs(Math.sin(angle)) * rawHalfY;
+  const halfY =
+    Math.abs(Math.sin(angle)) * rawHalfX + Math.abs(Math.cos(angle)) * rawHalfY;
 
   const collect = (sourceZoom: number): TileKey[] => {
     const n = 2 ** sourceZoom;

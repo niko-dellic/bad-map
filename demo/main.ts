@@ -1,6 +1,15 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Map, NavigationControl } from "maplibre-gl";
-import { LowResBasemap } from "../src";
+import {
+  landuse,
+  LowResBasemap,
+  marine,
+  political,
+  streets,
+  topographic,
+  transit,
+  weather,
+} from "../src";
 import "./style.css";
 
 const map = new Map({
@@ -22,16 +31,37 @@ const map = new Map({
   maxZoom: 19,
   bearing: 0,
   pitch: 0,
-  dragRotate: false,
-  touchPitch: false,
+  dragRotate: true,
+  touchPitch: true,
   attributionControl: false,
 });
 
-map.addControl(new NavigationControl({ showCompass: false }), "top-right");
+map.addControl(new NavigationControl({ showCompass: true }), "bottom-left");
 
-const basemap = new LowResBasemap();
+const BASE_SOURCE = {
+  tileJSON: "https://tiles.openfreemap.org/planet",
+  attribution: "OpenFreeMap © OpenMapTiles · Data © OpenStreetMap contributors",
+};
+const packDescriptors = [
+  streets(),
+  transit({ enabled: false, priority: 20 }),
+  topographic({ enabled: false, priority: 10 }),
+  political({ enabled: false, priority: 15 }),
+  marine({ enabled: false, priority: 12 }),
+  landuse({ enabled: false, priority: 8 }),
+  weather({ source: "weather", enabled: false, priority: 30 }),
+];
+const basemap = new LowResBasemap({
+  source: BASE_SOURCE,
+  layers: packDescriptors,
+  colorMode: "greyscale",
+  camera: { rotation: false, pitch: false, maxPitch: 70 },
+});
 const status = document.querySelector<HTMLSpanElement>("#status")!;
 const readout = document.querySelector<HTMLElement>("#readout")!;
+const settings = document.querySelector<HTMLElement>("#settings")!;
+const settingsToggle =
+  document.querySelector<HTMLButtonElement>("#settings-toggle")!;
 const diagnostics = {
   renderEvents: 0,
   styleEvents: 0,
@@ -54,14 +84,19 @@ basemap.on("error", ({ error }) => {
   status.textContent = error.message;
 });
 basemap.on("featureenter", ({ feature }) => {
-  readout.textContent =
-    feature.name || `${feature.class || feature.kind} · ${feature.sourceLayer}`;
+  const title = feature.name || feature.class || feature.kind;
+  readout.textContent = `${title} · ${feature.packId}/${feature.sourceLayer}`;
 });
 basemap.on("featureleave", () => {
   readout.textContent = "Move over the map to inspect a feature.";
 });
 
-await basemap.addTo(map);
+try {
+  await basemap.addTo(map);
+} catch (error) {
+  status.textContent = error instanceof Error ? error.message : String(error);
+  throw error;
+}
 
 // A regular MapLibre visualization lives above the low-res basemap and below
 // its labels. This is the package's central layering contract.
@@ -101,19 +136,15 @@ map.addLayer(
       "circle-stroke-width": 1,
     },
   },
-  basemap.layerIds.labels,
+  basemap.layerIds.markers,
 );
 
-let dark = true;
-document.querySelector<HTMLButtonElement>("#theme")!.onclick = (event) => {
-  dark = !dark;
-  basemap.setTheme(dark ? "dark" : "light");
-  (event.currentTarget as HTMLButtonElement).textContent = dark
-    ? "light theme"
-    : "dark theme";
+const theme = document.querySelector<HTMLSelectElement>("#theme")!;
+theme.onchange = () => {
+  basemap.setTheme(theme.value === "light" ? "light" : "dark");
 };
 
-let greyscale = false;
+let greyscale = true;
 document.querySelector<HTMLButtonElement>("#color-mode")!.onclick = (event) => {
   greyscale = !greyscale;
   basemap.setColorMode(greyscale ? "greyscale" : "color");
@@ -122,26 +153,131 @@ document.querySelector<HTMLButtonElement>("#color-mode")!.onclick = (event) => {
     : "greyscale";
 };
 
+const cellWidth = document.querySelector<HTMLInputElement>("#cell-width")!;
+const cellHeight = document.querySelector<HTMLInputElement>("#cell-height")!;
+const dotSize = document.querySelector<HTMLInputElement>("#dot-size")!;
+const applyCell = () => {
+  const width = Number(cellWidth.value);
+  const height = Number(cellHeight.value);
+  const maximum = Math.min(width / 2, height / 4);
+  const dot = Math.min(Number(dotSize.value), maximum);
+  dotSize.max = String(maximum);
+  dotSize.value = String(dot);
+  document.querySelector("#cell-width-value")!.textContent = String(width);
+  document.querySelector("#cell-height-value")!.textContent = String(height);
+  document.querySelector("#dot-size-value")!.textContent = String(dot);
+  basemap.setCell({ width, height, dotSize: dot });
+};
+cellWidth.oninput = applyCell;
+cellHeight.oninput = applyCell;
+dotSize.oninput = applyCell;
 let large = false;
-document.querySelector<HTMLButtonElement>("#cells")!.onclick = (event) => {
+document.querySelector<HTMLButtonElement>("#cells")!.onclick = () => {
   large = !large;
-  basemap.setCell(
-    large
-      ? { width: 10, height: 20, dotSize: 2.5 }
-      : { width: 8, height: 16, dotSize: 2 },
-  );
-  (event.currentTarget as HTMLButtonElement).textContent = large
-    ? "smaller cells"
-    : "larger cells";
+  cellWidth.value = large ? "12" : "8";
+  cellHeight.value = large ? "24" : "16";
+  dotSize.value = large ? "3" : "2";
+  applyCell();
 };
 
-let labels = true;
-document.querySelector<HTMLButtonElement>("#labels")!.onclick = (event) => {
-  labels = !labels;
-  basemap.setLabelsVisible(labels);
-  (event.currentTarget as HTMLButtonElement).textContent = labels
-    ? "hide labels"
-    : "show labels";
+const labels = document.querySelector<HTMLInputElement>("#labels")!;
+labels.onchange = () => basemap.setLabelsVisible(labels.checked);
+const locale = document.querySelector<HTMLSelectElement>("#locale")!;
+locale.onchange = () => basemap.setLocale(locale.value);
+
+const projection = document.querySelector<HTMLSelectElement>("#projection")!;
+const rotation = document.querySelector<HTMLInputElement>("#rotation")!;
+const bearing = document.querySelector<HTMLInputElement>("#bearing")!;
+const pitch = document.querySelector<HTMLInputElement>("#pitch")!;
+const updateCameraLabels = () => {
+  document.querySelector("#bearing-value")!.textContent =
+    `${Math.round(map.getBearing())}°`;
+  document.querySelector("#pitch-value")!.textContent =
+    `${Math.round(map.getPitch())}°`;
+};
+projection.onchange = () => {
+  const surface = projection.value === "surface";
+  pitch.disabled = !surface;
+  rotation.checked = surface || rotation.checked;
+  basemap.setProjectionMode(surface ? "surface" : "screen").setCamera({
+    rotation: rotation.checked,
+    pitch: surface,
+    maxPitch: 70,
+  });
+  map.easeTo({ pitch: surface ? Number(pitch.value) || 45 : 0, duration: 450 });
+};
+rotation.onchange = () =>
+  basemap.setCamera({
+    rotation: rotation.checked,
+    pitch: projection.value === "surface",
+  });
+bearing.oninput = () => map.setBearing(Number(bearing.value));
+pitch.oninput = () => map.setPitch(Number(pitch.value));
+map.on("rotate", () => {
+  bearing.value = String(Math.round(map.getBearing()));
+  updateCameraLabels();
+});
+map.on("pitch", () => {
+  pitch.value = String(Math.round(map.getPitch()));
+  updateCameraLabels();
+});
+
+const packs = document.querySelector<HTMLDivElement>("#packs")!;
+for (const descriptor of packDescriptors) {
+  const label = document.createElement("label");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = descriptor.enabled !== false;
+  input.dataset.pack = descriptor.id;
+  input.onchange = () => basemap.setLayerVisible(descriptor.id, input.checked);
+  label.append(input, descriptor.id);
+  packs.append(label);
+}
+
+document.querySelector<HTMLButtonElement>("#apply-sources")!.onclick = () => {
+  const baseUrl =
+    document.querySelector<HTMLInputElement>("#base-source")!.value;
+  const weatherUrl =
+    document.querySelector<HTMLInputElement>("#weather-source")!.value;
+  const timeKey =
+    document.querySelector<HTMLInputElement>("#weather-time")!.value;
+  basemap.setSources({
+    base: { ...BASE_SOURCE, tileJSON: baseUrl },
+    ...(weatherUrl
+      ? {
+          weather: {
+            tileJSON: weatherUrl,
+            attribution: "Weather source",
+            ...(timeKey ? { timeKey } : {}),
+          },
+        }
+      : {}),
+  });
+  const weatherToggle = document.querySelector<HTMLInputElement>(
+    '[data-pack="weather"]',
+  )!;
+  weatherToggle.checked = Boolean(weatherUrl);
+  basemap.setLayerVisible("weather", Boolean(weatherUrl));
+};
+
+document.querySelector<HTMLButtonElement>("#reset")!.onclick = () => {
+  map.easeTo({
+    center: [-74.006, 40.7128],
+    zoom: 14.4,
+    bearing: 0,
+    pitch: 0,
+    duration: 500,
+  });
+};
+
+settingsToggle.onclick = () => {
+  const collapsed = settings.classList.toggle("is-collapsed");
+  settingsToggle.textContent = collapsed ? "expand" : "collapse";
+  settingsToggle.setAttribute("aria-expanded", String(!collapsed));
+  settingsToggle.setAttribute(
+    "aria-label",
+    collapsed ? "Expand settings panel" : "Collapse settings panel",
+  );
 };
 
 window.addEventListener("beforeunload", () => basemap.remove());

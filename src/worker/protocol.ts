@@ -1,8 +1,19 @@
-import type { LowResSource, RasterFrame, RasterViewState } from "../types";
+import type {
+  LowResLayerPackDescriptor,
+  LowResSource,
+  RasterFrame,
+  RasterViewState,
+} from "../types";
 
 export type WorkerRequest =
-  | { type: "configure"; source: LowResSource; maxCachedTiles: number }
+  | {
+      type: "configure";
+      sources: Record<string, LowResSource>;
+      layers: LowResLayerPackDescriptor[];
+      maxCachedTiles: number;
+    }
   | { type: "render"; generation: number; state: RasterViewState }
+  | { type: "set-time"; sourceId: string; timeKey: string | number }
   | { type: "refresh" }
   | { type: "dispose" };
 
@@ -19,5 +30,6 @@ export function frameTransferables(frame: RasterFrame): Transferable[] {
     frame.lineTone.buffer,
     frame.owner.buffer,
     frame.ribbon.buffer,
+    frame.scalar.buffer,
   ];
 }

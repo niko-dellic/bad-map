@@ -7,9 +7,14 @@ test("matches settled city, theme, and greyscale baselines", async ({
   await expect(page.locator("#status")).toContainText("rendered in");
   await page.evaluate(() => {
     for (const element of document.querySelectorAll<HTMLElement>(
-      "header, aside, nav, .maplibregl-control-container",
+      "header, aside, #readout, nav, .maplibregl-control-container",
     ))
       element.style.display = "none";
+    (
+      window as typeof window & {
+        __badMapDemo: { basemap: { setColorMode(mode: string): void } };
+      }
+    ).__badMapDemo.basemap.setColorMode("color");
   });
 
   await expect(page).toHaveScreenshot("nyc-dark.png", {
@@ -90,9 +95,14 @@ test("matches retina dark and greyscale baselines", async ({ browser }) => {
   await expect(page.locator("#status")).toContainText("rendered in");
   await page.evaluate(() => {
     for (const element of document.querySelectorAll<HTMLElement>(
-      "header, aside, nav, .maplibregl-control-container",
+      "header, aside, #readout, nav, .maplibregl-control-container",
     ))
       element.style.display = "none";
+    (
+      window as typeof window & {
+        __badMapDemo: { basemap: { setColorMode(mode: string): void } };
+      }
+    ).__badMapDemo.basemap.setColorMode("color");
   });
   await expect(page).toHaveScreenshot("nyc-dark-retina.png", {
     animations: "disabled",
@@ -108,4 +118,48 @@ test("matches retina dark and greyscale baselines", async ({ browser }) => {
     animations: "disabled",
   });
   await context.close();
+});
+
+test("matches the experimental pitched surface baseline", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#status")).toContainText("rendered in");
+  const generation = await page.evaluate(() => {
+    for (const element of document.querySelectorAll<HTMLElement>(
+      "header, aside, #readout, nav, .maplibregl-control-container",
+    ))
+      element.style.display = "none";
+    const demo = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { jumpTo(options: unknown): void };
+          basemap: {
+            setProjectionMode(mode: string): {
+              setCamera(options: unknown): void;
+            };
+          };
+          diagnostics: { lastGeneration: number };
+        };
+      }
+    ).__badMapDemo;
+    demo.basemap
+      .setProjectionMode("surface")
+      .setCamera({ rotation: true, pitch: true, maxPitch: 70 });
+    demo.map.jumpTo({ bearing: 18, pitch: 45 });
+    return demo.diagnostics.lastGeneration;
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              __badMapDemo: { diagnostics: { lastGeneration: number } };
+            }
+          ).__badMapDemo.diagnostics.lastGeneration,
+      ),
+    )
+    .toBeGreaterThan(generation);
+  await expect(page).toHaveScreenshot("nyc-surface.png", {
+    animations: "disabled",
+  });
 });

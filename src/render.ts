@@ -4,6 +4,7 @@ import type {
   Map as MapLibreMap,
 } from "maplibre-gl";
 import { reprojectionTransform } from "./geometry";
+import { lngLatToWorld } from "./geometry";
 import { FillClass, LabelInk, LineClass } from "./style";
 import type { LowResTheme, RGB, RasterFrame } from "./types";
 
@@ -13,33 +14,68 @@ interface FrameProvider {
   theme(): LowResTheme;
   labelsVisible(): boolean;
   styleRevision(): number;
+  hoveredOwner(): number;
+  selectedOwner(): number;
+  projectionMode(): "screen" | "surface";
+}
+
+/** A stable no-op custom layer used as a public insertion boundary. */
+export class SlotLayer implements CustomLayerInterface {
+  readonly type = "custom" as const;
+  readonly renderingMode = "2d" as const;
+  constructor(readonly id: string) {}
+  render(): void {}
 }
 
 const VERTEX = `#version 300 es
+precision highp float;
+precision highp int;
 in vec2 a_position;
 out vec2 v_uv;
+out vec2 v_surface_pixel;
+uniform int u_surface;
+uniform mat4 u_map_matrix;
+uniform vec4 u_world_bounds;
+uniform vec2 u_frame_view_size;
 void main() {
   v_uv = a_position * 0.5 + 0.5;
-  gl_Position = vec4(a_position, 0.0, 1.0);
+  v_surface_pixel = vec2(v_uv.x * u_frame_view_size.x, (1.0 - v_uv.y) * u_frame_view_size.y);
+  if (u_surface == 1) {
+    vec2 world = vec2(mix(u_world_bounds.x, u_world_bounds.z, v_uv.x),
+                      mix(u_world_bounds.w, u_world_bounds.y, v_uv.y));
+    gl_Position = u_map_matrix * vec4(world, 0.0, 1.0);
+  } else {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+  }
 }`;
 
 const BASE_FRAGMENT = `#version 300 es
 precision highp float;
+precision highp int;
 uniform sampler2D u_fill;
 uniform sampler2D u_mask;
 uniform sampler2D u_line_class;
 uniform sampler2D u_line_tone;
 uniform sampler2D u_ribbon;
+uniform highp usampler2D u_owner;
+uniform sampler2D u_scalar;
 uniform vec2 u_current_view_size;
 uniform vec2 u_frame_view_size;
 uniform float u_pixel_ratio;
-uniform float u_reproject_scale;
+uniform mat2 u_reproject_matrix;
 uniform vec2 u_reproject_offset;
 uniform vec2 u_cell_size;
 uniform float u_dot_size;
 uniform ivec2 u_grid_size;
 uniform vec3 u_fill_colors[5];
 uniform vec3 u_line_colors[18];
+uniform vec3 u_hover_color;
+uniform vec3 u_selected_color;
+uniform uint u_hover_owner;
+uniform uint u_selected_owner;
+uniform vec3 u_scalar_colors[4];
+uniform int u_surface;
+in vec2 v_surface_pixel;
 out vec4 out_color;
 
 int brailleBit(int column, int row) {
@@ -58,7 +94,7 @@ int brailleBit(int column, int row) {
 void main() {
   vec2 top_pixel = vec2(gl_FragCoord.x / u_pixel_ratio,
                         u_current_view_size.y - gl_FragCoord.y / u_pixel_ratio);
-  vec2 source_pixel = top_pixel * u_reproject_scale + u_reproject_offset;
+  vec2 source_pixel = u_surface == 1 ? v_surface_pixel : u_reproject_matrix * top_pixel + u_reproject_offset;
   ivec2 source_cell = ivec2(floor(source_pixel / u_cell_size));
   if (source_cell.x < 0 || source_cell.y < 0 || source_cell.x >= u_grid_size.x || source_cell.y >= u_grid_size.y) {
     out_color = vec4(u_fill_colors[0], 1.0);
@@ -70,7 +106,8 @@ void main() {
   vec3 color = u_fill_colors[clamp(fill_class, 0, 4)];
   if (texelFetch(u_ribbon, source_cell, 0).r > 0.5) color = mix(color, u_line_colors[16], 0.30);
 
-  vec2 output_local = top_pixel - floor(top_pixel / u_cell_size) * u_cell_size;
+  vec2 lattice_pixel = u_surface == 1 ? source_pixel : top_pixel;
+  vec2 output_local = lattice_pixel - floor(lattice_pixel / u_cell_size) * u_cell_size;
   int dot_column = clamp(int(floor(output_local.x / (u_cell_size.x * 0.5))), 0, 1);
   int dot_row = clamp(int(floor(output_local.y / (u_cell_size.y * 0.25))), 0, 3);
   vec2 center = vec2((float(dot_column) + 0.5) * u_cell_size.x * 0.5,
@@ -88,24 +125,38 @@ void main() {
     if (texelFetch(u_line_tone, source_cell, 0).r > 0.5) ink = mix(u_fill_colors[0], ink, 0.45);
     color = ink;
   }
+  float scalar = texelFetch(u_scalar, source_cell, 0).r;
+  if (scalar > 0.0) {
+    float value = clamp((scalar * 255.0 - 1.0) / 254.0, 0.0, 1.0);
+    float segment = value * 3.0;
+    int left = min(2, int(floor(segment)));
+    vec3 scalar_color = mix(u_scalar_colors[left], u_scalar_colors[left + 1], fract(segment));
+    color = mix(color, scalar_color, 0.48);
+  }
+  uint owner = texelFetch(u_owner, source_cell, 0).r;
+  if (owner != 0u && owner == u_selected_owner) color = mix(color, u_selected_color, 0.58);
+  else if (owner != 0u && owner == u_hover_owner) color = mix(color, u_hover_color, 0.42);
   out_color = vec4(color, 1.0);
 }`;
 
 const LABEL_FRAGMENT = `#version 300 es
 precision highp float;
+precision highp int;
 uniform sampler2D u_texture;
 uniform vec2 u_current_view_size;
 uniform vec2 u_frame_view_size;
 uniform float u_pixel_ratio;
-uniform float u_reproject_scale;
+uniform mat2 u_reproject_matrix;
 uniform vec2 u_reproject_offset;
 uniform float u_opacity;
+uniform int u_surface;
 in vec2 v_uv;
+in vec2 v_surface_pixel;
 out vec4 out_color;
 void main() {
   vec2 top_pixel = vec2(gl_FragCoord.x / u_pixel_ratio,
                         u_current_view_size.y - gl_FragCoord.y / u_pixel_ratio);
-  vec2 source_pixel = top_pixel * u_reproject_scale + u_reproject_offset;
+  vec2 source_pixel = u_surface == 1 ? v_surface_pixel : u_reproject_matrix * top_pixel + u_reproject_offset;
   if (source_pixel.x < 0.0 || source_pixel.y < 0.0 ||
       source_pixel.x >= u_frame_view_size.x || source_pixel.y >= u_frame_view_size.y) {
     out_color = vec4(0.0);
@@ -199,7 +250,7 @@ function lineColors(theme: LowResTheme): RGB[] {
 
 abstract class ScreenLayer implements CustomLayerInterface {
   readonly type = "custom" as const;
-  readonly renderingMode = "2d" as const;
+  readonly renderingMode = "3d" as const;
   protected gl: WebGL2RenderingContext | undefined;
   protected shader: WebGLProgram | undefined;
   protected vertexBuffer: WebGLBuffer | undefined;
@@ -228,7 +279,7 @@ abstract class ScreenLayer implements CustomLayerInterface {
 
   render(
     context: WebGLRenderingContext | WebGL2RenderingContext,
-    _options: CustomRenderMethodInput,
+    options: CustomRenderMethodInput,
   ): void {
     if (!this.gl || !this.shader || !this.vertexBuffer || context !== this.gl)
       return;
@@ -241,7 +292,7 @@ abstract class ScreenLayer implements CustomLayerInterface {
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.STENCIL_TEST);
     gl.disable(gl.CULL_FACE);
-    this.draw(gl, this.shader);
+    this.draw(gl, this.shader, options);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
@@ -258,6 +309,7 @@ abstract class ScreenLayer implements CustomLayerInterface {
   protected abstract draw(
     gl: WebGL2RenderingContext,
     shader: WebGLProgram,
+    options: CustomRenderMethodInput,
   ): void;
   protected abstract release(gl: WebGL2RenderingContext): void;
 }
@@ -270,13 +322,18 @@ export class BaseLayer extends ScreenLayer {
     return BASE_FRAGMENT;
   }
   protected allocate(gl: WebGL2RenderingContext): void {
-    this.#textures = Array.from({ length: 5 }, () => texture(gl));
+    this.#textures = Array.from({ length: 7 }, () => texture(gl));
   }
 
-  protected draw(gl: WebGL2RenderingContext, shader: WebGLProgram): void {
+  protected draw(
+    gl: WebGL2RenderingContext,
+    shader: WebGLProgram,
+    options: CustomRenderMethodInput,
+  ): void {
     const frame = this.provider.frame();
     if (!frame) return;
     const current = this.provider.viewState() ?? frame.state;
+    setProjectionUniforms(gl, shader, frame, this.provider, options);
     const transform = reprojectionTransform(frame.state, current);
     if (frame.generation !== this.#uploadedGeneration) {
       this.#upload(gl, 0, frame.columns, frame.rows * 2, frame.fill);
@@ -284,6 +341,8 @@ export class BaseLayer extends ScreenLayer {
       this.#upload(gl, 2, frame.columns, frame.rows, frame.lineClass);
       this.#upload(gl, 3, frame.columns, frame.rows, frame.lineTone);
       this.#upload(gl, 4, frame.columns, frame.rows, frame.ribbon);
+      this.#uploadOwner(gl, 5, frame.columns, frame.rows, frame.owner);
+      this.#upload(gl, 6, frame.columns, frame.rows, frame.scalar);
       this.#uploadedGeneration = frame.generation;
     }
     const names = [
@@ -292,6 +351,8 @@ export class BaseLayer extends ScreenLayer {
       "u_line_class",
       "u_line_tone",
       "u_ribbon",
+      "u_owner",
+      "u_scalar",
     ];
     this.#textures.forEach((value, index) => {
       gl.activeTexture(gl.TEXTURE0 + index);
@@ -310,9 +371,10 @@ export class BaseLayer extends ScreenLayer {
       frame.state.height,
     );
     gl.uniform1f(gl.getUniformLocation(shader, "u_pixel_ratio"), ratio);
-    gl.uniform1f(
-      gl.getUniformLocation(shader, "u_reproject_scale"),
-      transform.scale,
+    gl.uniformMatrix2fv(
+      gl.getUniformLocation(shader, "u_reproject_matrix"),
+      false,
+      transform.matrix,
     );
     gl.uniform2f(
       gl.getUniformLocation(shader, "u_reproject_offset"),
@@ -341,6 +403,32 @@ export class BaseLayer extends ScreenLayer {
       gl.getUniformLocation(shader, "u_line_colors[0]"),
       normalized(lineColors(this.provider.theme())),
     );
+    gl.uniform3fv(
+      gl.getUniformLocation(shader, "u_hover_color"),
+      normalized([this.provider.theme().hover]),
+    );
+    gl.uniform3fv(
+      gl.getUniformLocation(shader, "u_selected_color"),
+      normalized([this.provider.theme().marker]),
+    );
+    gl.uniform1ui(
+      gl.getUniformLocation(shader, "u_hover_owner"),
+      this.provider.hoveredOwner(),
+    );
+    gl.uniform1ui(
+      gl.getUniformLocation(shader, "u_selected_owner"),
+      this.provider.selectedOwner(),
+    );
+    const theme = this.provider.theme();
+    gl.uniform3fv(
+      gl.getUniformLocation(shader, "u_scalar_colors[0]"),
+      normalized([
+        theme.lines.waterway,
+        theme.labels.park,
+        theme.lines.motorway,
+        theme.labels.medical,
+      ]),
+    );
     gl.disable(gl.BLEND);
   }
 
@@ -367,6 +455,29 @@ export class BaseLayer extends ScreenLayer {
     );
   }
 
+  #uploadOwner(
+    gl: WebGL2RenderingContext,
+    index: number,
+    width: number,
+    height: number,
+    data: Uint32Array,
+  ): void {
+    gl.activeTexture(gl.TEXTURE0 + index);
+    gl.bindTexture(gl.TEXTURE_2D, this.#textures[index]!);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R32UI,
+      width,
+      height,
+      0,
+      gl.RED_INTEGER,
+      gl.UNSIGNED_INT,
+      data,
+    );
+  }
+
   protected release(gl: WebGL2RenderingContext): void {
     this.#textures.forEach((value) => gl.deleteTexture(value));
   }
@@ -386,10 +497,15 @@ export class LabelsLayer extends ScreenLayer {
     this.#canvas = document.createElement("canvas");
   }
 
-  protected draw(gl: WebGL2RenderingContext, shader: WebGLProgram): void {
+  protected draw(
+    gl: WebGL2RenderingContext,
+    shader: WebGLProgram,
+    options: CustomRenderMethodInput,
+  ): void {
     const frame = this.provider.frame();
     if (!frame || !this.#texture || !this.#canvas) return;
     const current = this.provider.viewState() ?? frame.state;
+    setProjectionUniforms(gl, shader, frame, this.provider, options);
     const transform = reprojectionTransform(frame.state, current);
     const revision = this.provider.styleRevision();
     if (
@@ -433,16 +549,20 @@ export class LabelsLayer extends ScreenLayer {
       gl.getUniformLocation(shader, "u_pixel_ratio"),
       current.pixelRatio,
     );
-    gl.uniform1f(
-      gl.getUniformLocation(shader, "u_reproject_scale"),
-      transform.scale,
+    gl.uniformMatrix2fv(
+      gl.getUniformLocation(shader, "u_reproject_matrix"),
+      false,
+      transform.matrix,
     );
     gl.uniform2f(
       gl.getUniformLocation(shader, "u_reproject_offset"),
       transform.offset[0],
       transform.offset[1],
     );
-    const opacity = 1 - smoothstep(0.08, 0.45, Math.abs(transform.zoomDelta));
+    const opacity =
+      this.provider.projectionMode() === "surface"
+        ? 1
+        : 1 - smoothstep(0.08, 0.45, Math.abs(transform.zoomDelta));
     gl.uniform1f(gl.getUniformLocation(shader, "u_opacity"), opacity);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -451,6 +571,42 @@ export class LabelsLayer extends ScreenLayer {
   protected release(gl: WebGL2RenderingContext): void {
     if (this.#texture) gl.deleteTexture(this.#texture);
   }
+}
+
+function setProjectionUniforms(
+  gl: WebGL2RenderingContext,
+  shader: WebGLProgram,
+  frame: RasterFrame,
+  provider: FrameProvider,
+  options: CustomRenderMethodInput,
+): void {
+  const surface = provider.projectionMode() === "surface";
+  gl.uniform1i(gl.getUniformLocation(shader, "u_surface"), surface ? 1 : 0);
+  gl.uniform2f(
+    gl.getUniformLocation(shader, "u_frame_view_size"),
+    frame.state.width,
+    frame.state.height,
+  );
+  if (!surface) return;
+  gl.uniformMatrix4fv(
+    gl.getUniformLocation(shader, "u_map_matrix"),
+    false,
+    options.defaultProjectionData.mainMatrix,
+  );
+  const [centerX, centerY] = lngLatToWorld(
+    frame.state.center.lng,
+    frame.state.center.lat,
+  );
+  const worldSize = 512 * 2 ** frame.state.zoom;
+  const halfX = frame.state.width / (2 * worldSize);
+  const halfY = frame.state.height / (2 * worldSize);
+  gl.uniform4f(
+    gl.getUniformLocation(shader, "u_world_bounds"),
+    centerX - halfX,
+    centerY - halfY,
+    centerX + halfX,
+    centerY + halfY,
+  );
 }
 
 function smoothstep(edge0: number, edge1: number, value: number): number {

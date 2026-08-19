@@ -7,6 +7,8 @@ import type { RasterViewState } from "../src/types";
 const state: RasterViewState = {
   center: { lng: 0, lat: 0 },
   zoom: 14,
+  bearing: 0,
+  pitch: 0,
   width: 64,
   height: 64,
   pixelRatio: 1,
@@ -113,5 +115,32 @@ describe("semantic rasterizer", () => {
     expect([...frame.owner].some(Boolean)).toBe(true);
     const owner = [...frame.owner].find(Boolean)!;
     expect(frame.features[owner - 1]?.name).toBe("Owned Road");
+  });
+
+  it("quantizes numeric polygon properties into a scalar texture", () => {
+    const radar = feature({
+      sourceLayer: "weather",
+      type: 3,
+      properties: { value: 0.5 },
+      numeric: { property: "value", min: 0, max: 1 },
+      sourceId: "weather",
+      packId: "weather",
+      adapter: "weather",
+      geometry: [
+        [
+          [0, 0],
+          [256, 0],
+          [256, 256],
+          [0, 256],
+        ],
+      ],
+    });
+    const frame = rasterizeView([radar], state);
+    expect(Math.max(...frame.scalar)).toBeGreaterThan(100);
+    expect([...frame.owner].some(Boolean)).toBe(true);
+    expect(frame.features[0]).toMatchObject({
+      sourceId: "weather",
+      packId: "weather",
+    });
   });
 });

@@ -2,6 +2,16 @@ export { LowResBasemap } from "./low-res-basemap";
 export { DARK_THEME, LIGHT_THEME } from "./theme";
 export { composeTheme, greyscaleColor, relativeLuminance } from "./theme";
 export {
+  featureMatches,
+  landuse,
+  marine,
+  political,
+  streets,
+  topographic,
+  transit,
+  weather,
+} from "./packs";
+export {
   FillClass,
   LabelInk,
   LineClass,
@@ -11,14 +21,18 @@ export {
 } from "./style";
 export type {
   BuiltinThemeName,
+  BuiltinLayerAdapter,
   CellGeometry,
   LowResBasemapLike,
   LowResBasemapOptions,
   LowResColorMode,
+  LowResCameraOptions,
   LowResError,
   LowResEventMap,
   LowResFeature,
   LowResFeatureKind,
+  LowResLayerPackDescriptor,
+  LowResProjectionMode,
   LowResSource,
   LowResTheme,
   RGB,
