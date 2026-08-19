@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { visibleTiles } from "../geometry";
+import { rasterizeHeatmap, type HeatmapRasterOptions } from "../heatmap";
 import { featureBelongsToPack } from "../packs";
 import { rasterizeView } from "../rasterize";
 import { bandFor, effectiveStyleZoom, sourceZoom } from "../style";
@@ -18,6 +19,13 @@ let pendingRender: Extract<WorkerRequest, { type: "render" }> | undefined;
 let pumpScheduled = false;
 let rendering = false;
 let latestGeneration = -1;
+let heatmapPoints: Float32Array<ArrayBufferLike> = new Float32Array();
+let heatmapOptions: HeatmapRasterOptions = {
+  visible: false,
+  radius: 36,
+  intensity: 1,
+  maxDensity: 0,
+};
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
@@ -52,6 +60,12 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   }
   if (message.type === "set-time") {
     loaders.get(message.sourceId)?.setTimeKey(message.timeKey);
+    controller?.abort();
+    return;
+  }
+  if (message.type === "set-heatmap") {
+    heatmapOptions = message.options;
+    if (message.points) heatmapPoints = message.points;
     controller?.abort();
     return;
   }
@@ -168,6 +182,15 @@ async function render(
     if (controller.signal.aborted || disposed || generation < latestGeneration)
       return;
     const frame = rasterizeView(features, state, generation, warnings);
+    const heatmapStarted = performance.now();
+    frame.heatmap = rasterizeHeatmap(
+      heatmapPoints,
+      state,
+      frame.columns,
+      frame.rows,
+      heatmapOptions,
+    );
+    frame.durationMs += performance.now() - heatmapStarted;
     post({ type: "frame", frame }, frameTransferables(frame));
   } catch (cause) {
     if (controller.signal.aborted || disposed) return;

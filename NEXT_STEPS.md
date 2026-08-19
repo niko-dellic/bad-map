@@ -20,9 +20,10 @@ geometry, independent labels, typed nonfatal failures, and public MapLibre APIs.
 | 4. Numeric and time-aware data | Foundation complete | Quantized scalar texture, weather and elevation defaults, `{time}` tile templates, runtime time updates, and time-keyed caches                                    |
 | 5. Visualization and picking   | Complete            | Data, marker, label, and interaction boundaries; owner-texture hover; persistent selection; pack/source-aware queries; filter helper                              |
 | 6. Rotation and 3D             | Experimental        | Bearing-aware screen mode, camera-footprint-fitted world surface, geographic picking, and optional theme-aware native building extrusions                         |
+| 7. Point-density heatmaps      | Foundation complete | Native comparison plus weighted worker kernels, stable domains, compact density buffers, square-dot dithering, runtime controls, and greyscale                    |
 
-The demo exposes the implemented appearance, lattice, camera, pack, source,
-and time options in a scrollable side panel. Greyscale is on by default.
+The demo exposes the implemented appearance, lattice, camera, pack, heatmap,
+source, and time options in a scrollable side panel. Greyscale is on by default.
 
 ## Architecture now in place
 
@@ -30,7 +31,7 @@ and time options in a scrollable side panel. Greyscale is on by default.
 flowchart LR
   S["Named TileJSON sources"] --> W["Worker loaders and bounded caches"]
   W --> P["Serializable semantic packs"]
-  P --> C["Categorical, scalar, owner, and label buffers"]
+  P --> C["Categorical, scalar, density, owner, and label buffers"]
   C --> B["Screen or surface compositor"]
   B --> D["Application data and markers"]
   D --> L["Labels and interaction"]
@@ -102,7 +103,15 @@ deliberately described as low-resolution 3D rather than terminal emulation.
   markers.
 - Publish reference schemas and fixture generators for custom MVT producers.
 
-### 3. Source resilience
+### 3. Heatmap depth
+
+- Add MVT and streaming point inputs alongside compact in-memory triplets.
+- Add concurrent density channels with independent domains and palettes.
+- Add optional cell-value queries and density-aware accessibility output.
+- Add temporal interpolation and deterministic cross-frame normalization.
+- Add metre-based kernels for comparable geographic radii across zoom levels.
+
+### 4. Source resilience
 
 - Preserve loader instances when pack membership changes so warm caches survive
   reconfiguration.
@@ -112,7 +121,7 @@ deliberately described as low-resolution 3D rather than terminal emulation.
 - Add raster-array and elevation-tile adapters alongside MVT.
 - Add worldview/schema settings to political and administrative adapters.
 
-### 4. Advanced picking
+### 5. Advanced picking
 
 - Add optional offscreen picking for overlapping features instead of returning
   only the winning owner.
@@ -120,7 +129,7 @@ deliberately described as low-resolution 3D rather than terminal emulation.
 - Expose semantic-to-MapLibre filter conversion for application overlays.
 - Add keyboard focus and accessible feature navigation in the demo.
 
-### 5. Surface-mode terrain
+### 6. Surface-mode terrain
 
 The current experimental surface is flat. A production 3D implementation
 should proceed in this order:

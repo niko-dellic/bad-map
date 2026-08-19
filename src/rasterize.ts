@@ -683,6 +683,7 @@ export function rasterizeView(
     owner: reduced.owner,
     ribbon: lineBuffers.ribbon,
     scalar: reduceScalar(scalarDots, columns, rows),
+    heatmap: new Uint8Array(columns * rows),
     labels,
     features: records,
     warnings,

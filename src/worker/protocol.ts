@@ -4,6 +4,7 @@ import type {
   RasterFrame,
   RasterViewState,
 } from "../types";
+import type { HeatmapRasterOptions } from "../heatmap";
 
 export type WorkerRequest =
   | {
@@ -14,6 +15,11 @@ export type WorkerRequest =
     }
   | { type: "render"; generation: number; state: RasterViewState }
   | { type: "set-time"; sourceId: string; timeKey: string | number }
+  | {
+      type: "set-heatmap";
+      options: HeatmapRasterOptions;
+      points?: Float32Array;
+    }
   | { type: "refresh" }
   | { type: "dispose" };
 
@@ -31,5 +37,6 @@ export function frameTransferables(frame: RasterFrame): Transferable[] {
     frame.owner.buffer,
     frame.ribbon.buffer,
     frame.scalar.buffer,
+    frame.heatmap.buffer,
   ];
 }

@@ -12,7 +12,12 @@ import {
   reprojectionTransform,
 } from "./geometry";
 import { streets } from "./packs";
-import { composeTheme, resolveTheme } from "./theme";
+import {
+  composeTheme,
+  greyscaleColor,
+  relativeLuminance,
+  resolveTheme,
+} from "./theme";
 import type {
   CellGeometry,
   LowResBasemapOptions,
@@ -21,10 +26,13 @@ import type {
   LowResError,
   LowResEventMap,
   LowResFeature,
+  LowResHeatmapOptions,
+  LowResHeatmapPoint,
   LowResLayerPackDescriptor,
   LowResProjectionMode,
   LowResSource,
   LowResTheme,
+  RGB,
   RasterFrame,
   RasterViewState,
 } from "./types";
@@ -41,6 +49,16 @@ const BUILDINGS_SOURCE_ID = "bad-map-buildings-source";
 type Listener<K extends keyof LowResEventMap> = (
   event: LowResEventMap[K],
 ) => void;
+
+interface HeatmapState {
+  points: Float32Array;
+  visible: boolean;
+  radius: number;
+  intensity: number;
+  maxDensity: number;
+  opacity: number;
+  palette?: readonly [RGB, RGB, RGB, RGB];
+}
 
 export class LowResBasemap {
   readonly layerIds = {
@@ -71,6 +89,7 @@ export class LowResBasemap {
   #colorMode: LowResColorMode;
   #projectionMode: LowResProjectionMode;
   #buildings3D: Required<LowResBuildings3DOptions>;
+  #heatmap: HeatmapState;
   #camera: { rotation: boolean; pitch: boolean; maxPitch: number };
   #styleRevision = 0;
   #map: MapLibreMap | undefined;
@@ -110,6 +129,7 @@ export class LowResBasemap {
     this.#colorMode = validateColorMode(options.colorMode ?? "greyscale");
     this.#projectionMode = options.projectionMode ?? "screen";
     this.#buildings3D = normalizeBuildings3D(options.buildings3D);
+    this.#heatmap = normalizeHeatmap(options.heatmap);
     const surface = this.#projectionMode === "surface";
     this.#camera = {
       rotation: options.camera?.rotation ?? surface,
@@ -159,6 +179,7 @@ export class LowResBasemap {
       layers: this.#layers,
       maxCachedTiles: this.#options.maxCachedTiles,
     });
+    this.#sendHeatmap(true);
 
     const provider = {
       frame: () => this.#frame,
@@ -169,6 +190,8 @@ export class LowResBasemap {
       hoveredOwner: () => this.#hovered?.id ?? 0,
       selectedOwner: () => this.#selectedOwner(),
       projectionMode: () => this.#projectionMode,
+      heatmapPalette: () => this.#heatmapPalette(),
+      heatmapOpacity: () => this.#heatmap.opacity,
     };
     this.#baseLayer = new BaseLayer(this.layerIds.base, provider);
     this.#labelsLayer = new LabelsLayer(this.layerIds.labels, provider);
@@ -294,6 +317,73 @@ export class LowResBasemap {
 
   getBuildings3DVisible(): boolean {
     return this.#buildings3D.visible;
+  }
+
+  setHeatmap(options: LowResHeatmapOptions): this {
+    const previous = this.#heatmap;
+    const next: HeatmapState = {
+      ...previous,
+      ...(options.visible === undefined ? {} : { visible: options.visible }),
+      ...(options.radius === undefined ? {} : { radius: options.radius }),
+      ...(options.intensity === undefined
+        ? {}
+        : { intensity: options.intensity }),
+      ...(options.maxDensity === undefined
+        ? {}
+        : { maxDensity: options.maxDensity }),
+      ...(options.opacity === undefined ? {} : { opacity: options.opacity }),
+      ...("palette" in options ? { palette: options.palette } : {}),
+      ...(options.data === undefined
+        ? {}
+        : { points: normalizeHeatmapData(options.data) }),
+    };
+    validateHeatmap(next);
+    const dataChanged = next.points !== previous.points;
+    const rasterChanged =
+      dataChanged ||
+      next.visible !== previous.visible ||
+      next.radius !== previous.radius ||
+      next.intensity !== previous.intensity ||
+      next.maxDensity !== previous.maxDensity;
+    const paintChanged =
+      next.opacity !== previous.opacity || next.palette !== previous.palette;
+    this.#heatmap = next;
+    if (rasterChanged) {
+      this.#sendHeatmap(dataChanged);
+      this.refresh();
+    }
+    if (paintChanged) {
+      this.#styleRevision += 1;
+      this.#map?.triggerRepaint();
+    }
+    this.#emitHeatmapChange();
+    return this;
+  }
+
+  setHeatmapData(data: readonly LowResHeatmapPoint[] | Float32Array): this {
+    return this.setHeatmap({ data });
+  }
+
+  setHeatmapVisible(visible: boolean): this {
+    return this.setHeatmap({ visible });
+  }
+
+  clearHeatmap(): this {
+    return this.setHeatmap({ data: new Float32Array(), visible: false });
+  }
+
+  getHeatmapOptions(): Omit<LowResHeatmapOptions, "data"> & {
+    pointCount: number;
+  } {
+    return {
+      visible: this.#heatmap.visible,
+      radius: this.#heatmap.radius,
+      intensity: this.#heatmap.intensity,
+      maxDensity: this.#heatmap.maxDensity,
+      opacity: this.#heatmap.opacity,
+      palette: this.#heatmapPalette(),
+      pointCount: this.#heatmap.points.length / 3,
+    };
   }
 
   setSource(source: LowResSource): this {
@@ -490,8 +580,50 @@ export class LowResBasemap {
     });
   }
 
-  #post(message: WorkerRequest): void {
-    this.#worker?.postMessage(message);
+  #post(message: WorkerRequest, transfer: Transferable[] = []): void {
+    this.#worker?.postMessage(message, { transfer });
+  }
+
+  #sendHeatmap(includeData: boolean): void {
+    if (!this.#worker) return;
+    const points = includeData ? this.#heatmap.points.slice() : undefined;
+    this.#post(
+      {
+        type: "set-heatmap",
+        options: {
+          visible: this.#heatmap.visible,
+          radius: this.#heatmap.radius,
+          intensity: this.#heatmap.intensity,
+          maxDensity: this.#heatmap.maxDensity,
+        },
+        ...(points ? { points } : {}),
+      },
+      points ? [points.buffer] : [],
+    );
+  }
+
+  #heatmapPalette(): readonly [RGB, RGB, RGB, RGB] {
+    const colors =
+      this.#heatmap.palette ??
+      ([
+        this.#baseTheme.lines.waterway,
+        this.#baseTheme.labels.park,
+        this.#baseTheme.lines.motorway,
+        this.#baseTheme.labels.medical,
+      ] as const);
+    if (this.#colorMode === "color") return colors;
+    const ground = relativeLuminance(this.#baseTheme.fills.ground);
+    return colors.map((color) =>
+      greyscaleColor(color, ground),
+    ) as unknown as readonly [RGB, RGB, RGB, RGB];
+  }
+
+  #emitHeatmapChange(): void {
+    this.#emit("heatmapchange", {
+      target: this,
+      visible: this.#heatmap.visible,
+      pointCount: this.#heatmap.points.length / 3,
+    });
   }
 
   #currentViewState(): RasterViewState | undefined {
@@ -789,6 +921,84 @@ function normalizeBuildings3D(
   if (!Number.isFinite(result.heightScale) || result.heightScale < 0)
     throw new RangeError("buildings3D.heightScale must be non-negative");
   return result;
+}
+
+function normalizeHeatmap(
+  options: LowResHeatmapOptions | undefined,
+): HeatmapState {
+  const state: HeatmapState = {
+    points: normalizeHeatmapData(options?.data ?? new Float32Array()),
+    visible: options?.visible ?? false,
+    radius: options?.radius ?? 36,
+    intensity: options?.intensity ?? 1,
+    maxDensity: options?.maxDensity ?? 0,
+    opacity: options?.opacity ?? 0.76,
+    ...(options?.palette ? { palette: options.palette } : {}),
+  };
+  validateHeatmap(state);
+  return state;
+}
+
+function normalizeHeatmapData(
+  data: readonly LowResHeatmapPoint[] | Float32Array,
+): Float32Array {
+  if (data instanceof Float32Array) {
+    if (data.length % 3 !== 0)
+      throw new RangeError("Heatmap Float32Array data must contain triplets");
+    const points = data.slice();
+    validateHeatmapPoints(points);
+    return points;
+  }
+  const points = new Float32Array(data.length * 3);
+  data.forEach((point, index) => {
+    points[index * 3] = Number(point[0]);
+    points[index * 3 + 1] = Number(point[1]);
+    points[index * 3 + 2] = Number(point[2] ?? 1);
+  });
+  validateHeatmapPoints(points);
+  return points;
+}
+
+function validateHeatmap(state: HeatmapState): void {
+  if (
+    ![state.radius, state.intensity, state.maxDensity].every(
+      (value) => Number.isFinite(value) && value >= 0,
+    )
+  )
+    throw new RangeError(
+      "Heatmap radius, intensity, and maxDensity must be non-negative",
+    );
+  if (!Number.isFinite(state.opacity) || state.opacity < 0 || state.opacity > 1)
+    throw new RangeError("Heatmap opacity must be between zero and one");
+  if (state.palette)
+    for (const color of state.palette)
+      if (
+        color.length !== 3 ||
+        color.some(
+          (channel) =>
+            !Number.isFinite(channel) || channel < 0 || channel > 255,
+        )
+      )
+        throw new RangeError(
+          "Heatmap palette channels must be between 0 and 255",
+        );
+}
+
+function validateHeatmapPoints(points: Float32Array): void {
+  for (let index = 0; index < points.length; index += 3) {
+    const lng = points[index]!;
+    const lat = points[index + 1]!;
+    const weight = points[index + 2]!;
+    if (
+      !Number.isFinite(lng) ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(weight) ||
+      lat < -90 ||
+      lat > 90 ||
+      weight < 0
+    )
+      throw new TypeError(`Invalid heatmap point at index ${index / 3}`);
+  }
 }
 
 function rgbCss(color: readonly [number, number, number]): string {

@@ -152,6 +152,13 @@ output {
   color: #d7d9e0;
 }
 
+.section-status {
+  display: block;
+  color: #858b9a;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 #readout {
   top: 62px;
   left: 14px;

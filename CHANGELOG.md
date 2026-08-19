@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+### Added
+
+- Native MapLibre and worker-rendered low-resolution heatmap examples using
+  weighted NYC pickup data.
+- Compact point-density input, bounded worker kernels, stable density domains,
+  four-stop palettes, square-dot dithering, greyscale composition, and runtime
+  heatmap controls.
+
 ## 0.7.0
 
 ### Added

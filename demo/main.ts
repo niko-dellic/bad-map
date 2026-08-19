@@ -42,6 +42,10 @@ const BASE_SOURCE = {
   tileJSON: "https://tiles.openfreemap.org/planet",
   attribution: "OpenFreeMap © OpenMapTiles · Data © OpenStreetMap contributors",
 };
+const UBER_DATA_URL =
+  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/screen-grid/uber-pickup-locations.json";
+const NATIVE_HEATMAP_SOURCE = "demo-uber-pickups";
+const NATIVE_HEATMAP_LAYER = "demo-uber-native-heatmap";
 const packDescriptors = [
   streets(),
   transit({ enabled: false, priority: 20 }),
@@ -68,6 +72,7 @@ const diagnostics = {
   lastGeneration: -1,
   lastDurationMs: 0,
   generations: [] as number[],
+  heatmapEvents: 0,
 };
 
 basemap.on("render", ({ durationMs, generation }) => {
@@ -79,6 +84,9 @@ basemap.on("render", ({ durationMs, generation }) => {
 });
 basemap.on("stylechange", () => {
   diagnostics.styleEvents += 1;
+});
+basemap.on("heatmapchange", () => {
+  diagnostics.heatmapEvents += 1;
 });
 basemap.on("error", ({ error }) => {
   status.textContent = error.message;
@@ -248,6 +256,186 @@ for (const descriptor of packDescriptors) {
   label.append(input, descriptor.id);
   packs.append(label);
 }
+
+type PickupRow = readonly [number, number, number];
+interface PickupData {
+  rows: PickupRow[];
+  compact: Float32Array;
+}
+
+const heatmapMode = document.querySelector<HTMLSelectElement>("#heatmap-mode")!;
+const heatmapRadius =
+  document.querySelector<HTMLInputElement>("#heatmap-radius")!;
+const heatmapIntensity =
+  document.querySelector<HTMLInputElement>("#heatmap-intensity")!;
+const heatmapOpacity =
+  document.querySelector<HTMLInputElement>("#heatmap-opacity")!;
+const heatmapStatus =
+  document.querySelector<HTMLOutputElement>("#heatmap-status")!;
+let pickupDataPromise: Promise<PickupData> | undefined;
+let lowResHeatmapLoaded = false;
+
+const loadPickupData = (): Promise<PickupData> => {
+  pickupDataPromise ??= fetch(UBER_DATA_URL)
+    .then((response) => {
+      if (!response.ok)
+        throw new Error(`Pickup request failed (${response.status})`);
+      return response.json() as Promise<unknown>;
+    })
+    .then((value) => {
+      if (!Array.isArray(value)) throw new TypeError("Unexpected pickup data");
+      const rows: PickupRow[] = [];
+      for (const candidate of value) {
+        if (
+          !Array.isArray(candidate) ||
+          candidate.length < 2 ||
+          !candidate.slice(0, 3).every(Number.isFinite)
+        )
+          continue;
+        rows.push([
+          Number(candidate[0]),
+          Number(candidate[1]),
+          Number(candidate[2] ?? 1),
+        ]);
+      }
+      const compact = new Float32Array(rows.length * 3);
+      rows.forEach(([lng, lat, weight], index) => {
+        compact[index * 3] = lng;
+        compact[index * 3 + 1] = lat;
+        compact[index * 3 + 2] = weight;
+      });
+      return { rows, compact };
+    });
+  return pickupDataPromise;
+};
+
+const ensureNativeHeatmap = (rows: readonly PickupRow[]) => {
+  if (!map.getSource(NATIVE_HEATMAP_SOURCE)) {
+    map.addSource(NATIVE_HEATMAP_SOURCE, {
+      type: "geojson",
+      data: {
+        type: "FeatureCollection",
+        features: rows.map(([lng, lat, weight]) => ({
+          type: "Feature" as const,
+          properties: { weight },
+          geometry: {
+            type: "Point" as const,
+            coordinates: [lng, lat],
+          },
+        })),
+      },
+    });
+  }
+  if (!map.getLayer(NATIVE_HEATMAP_LAYER))
+    map.addLayer(
+      {
+        id: NATIVE_HEATMAP_LAYER,
+        type: "heatmap",
+        source: NATIVE_HEATMAP_SOURCE,
+        paint: {
+          "heatmap-weight": ["/", ["get", "weight"], 15],
+          "heatmap-radius": Number(heatmapRadius.value),
+          "heatmap-intensity": Number(heatmapIntensity.value) * 0.2,
+          "heatmap-opacity": Number(heatmapOpacity.value),
+          "heatmap-color": [
+            "interpolate",
+            ["linear"],
+            ["heatmap-density"],
+            0,
+            "rgba(24, 54, 92, 0)",
+            0.25,
+            "#286d9b",
+            0.5,
+            "#57ad85",
+            0.75,
+            "#efb24b",
+            1,
+            "#e24c5b",
+          ],
+        },
+      },
+      basemap.layerIds.markers,
+    );
+};
+
+const applyHeatmapControls = () => {
+  const radius = Number(heatmapRadius.value);
+  const intensity = Number(heatmapIntensity.value);
+  const opacity = Number(heatmapOpacity.value);
+  document.querySelector("#heatmap-radius-value")!.textContent = String(radius);
+  document.querySelector("#heatmap-intensity-value")!.textContent = intensity
+    .toFixed(2)
+    .replace(/0$/, "");
+  document.querySelector("#heatmap-opacity-value")!.textContent =
+    opacity.toFixed(2);
+  if (heatmapMode.value === "native" && map.getLayer(NATIVE_HEATMAP_LAYER)) {
+    map.setPaintProperty(NATIVE_HEATMAP_LAYER, "heatmap-radius", radius);
+    map.setPaintProperty(
+      NATIVE_HEATMAP_LAYER,
+      "heatmap-intensity",
+      intensity * 0.2,
+    );
+    map.setPaintProperty(NATIVE_HEATMAP_LAYER, "heatmap-opacity", opacity);
+  }
+  if (heatmapMode.value === "lowres")
+    basemap.setHeatmap({ radius, intensity, opacity });
+};
+
+const applyHeatmapMode = async () => {
+  const mode = heatmapMode.value;
+  if (mode === "off") {
+    if (map.getLayer(NATIVE_HEATMAP_LAYER))
+      map.setLayoutProperty(NATIVE_HEATMAP_LAYER, "visibility", "none");
+    basemap.setHeatmapVisible(false);
+    heatmapStatus.textContent = pickupDataPromise
+      ? "pickup data ready"
+      : "loads 100,000 NYC pickups on selection";
+    return;
+  }
+  heatmapMode.disabled = true;
+  heatmapStatus.textContent = "loading pickup data…";
+  try {
+    const data = await loadPickupData();
+    if (mode === "native") {
+      basemap.setHeatmapVisible(false);
+      ensureNativeHeatmap(data.rows);
+      map.setLayoutProperty(NATIVE_HEATMAP_LAYER, "visibility", "visible");
+    } else {
+      if (map.getLayer(NATIVE_HEATMAP_LAYER))
+        map.setLayoutProperty(NATIVE_HEATMAP_LAYER, "visibility", "none");
+      if (!lowResHeatmapLoaded) {
+        basemap.setHeatmap({
+          data: data.compact,
+          visible: true,
+          radius: Number(heatmapRadius.value),
+          intensity: Number(heatmapIntensity.value),
+          maxDensity: 192,
+          opacity: Number(heatmapOpacity.value),
+          palette: [
+            [40, 109, 155],
+            [87, 173, 133],
+            [239, 178, 75],
+            [226, 76, 91],
+          ],
+        });
+        lowResHeatmapLoaded = true;
+      } else basemap.setHeatmapVisible(true);
+    }
+    heatmapStatus.textContent = `${data.rows.length.toLocaleString()} weighted pickups · ${mode}`;
+    applyHeatmapControls();
+  } catch (error) {
+    heatmapMode.value = "off";
+    heatmapStatus.textContent =
+      error instanceof Error ? error.message : String(error);
+  } finally {
+    heatmapMode.disabled = false;
+  }
+};
+
+heatmapMode.onchange = () => void applyHeatmapMode();
+heatmapRadius.oninput = applyHeatmapControls;
+heatmapIntensity.oninput = applyHeatmapControls;
+heatmapOpacity.oninput = applyHeatmapControls;
 
 document.querySelector<HTMLButtonElement>("#apply-sources")!.onclick = () => {
   const baseUrl =

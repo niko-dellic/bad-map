@@ -17,6 +17,8 @@ interface FrameProvider {
   hoveredOwner(): number;
   selectedOwner(): number;
   projectionMode(): "screen" | "surface";
+  heatmapPalette(): readonly [RGB, RGB, RGB, RGB];
+  heatmapOpacity(): number;
 }
 
 /** A stable no-op custom layer used as a public insertion boundary. */
@@ -59,6 +61,7 @@ uniform sampler2D u_line_tone;
 uniform sampler2D u_ribbon;
 uniform highp usampler2D u_owner;
 uniform sampler2D u_scalar;
+uniform sampler2D u_heatmap;
 uniform vec2 u_current_view_size;
 uniform vec2 u_frame_view_size;
 uniform float u_pixel_ratio;
@@ -74,6 +77,8 @@ uniform vec3 u_selected_color;
 uniform uint u_hover_owner;
 uniform uint u_selected_owner;
 uniform vec3 u_scalar_colors[4];
+uniform vec3 u_heatmap_colors[4];
+uniform float u_heatmap_opacity;
 uniform int u_surface;
 in vec2 v_surface_pixel;
 out vec4 out_color;
@@ -89,6 +94,19 @@ int brailleBit(int column, int row) {
   if (row == 1) return 16;
   if (row == 2) return 32;
   return 128;
+}
+
+int ditherRank(int column, int row) {
+  if (column == 0) {
+    if (row == 0) return 0;
+    if (row == 1) return 5;
+    if (row == 2) return 2;
+    return 7;
+  }
+  if (row == 0) return 3;
+  if (row == 1) return 6;
+  if (row == 2) return 1;
+  return 4;
 }
 
 void main() {
@@ -130,8 +148,17 @@ void main() {
     float value = clamp((scalar * 255.0 - 1.0) / 254.0, 0.0, 1.0);
     float segment = value * 3.0;
     int left = min(2, int(floor(segment)));
-    vec3 scalar_color = mix(u_scalar_colors[left], u_scalar_colors[left + 1], fract(segment));
+    float fraction = segment - float(left);
+    vec3 scalar_color = mix(u_scalar_colors[left], u_scalar_colors[left + 1], fraction);
     color = mix(color, scalar_color, 0.48);
+  }
+  float heatmap = texelFetch(u_heatmap, source_cell, 0).r;
+  if (heatmap > 0.0 && in_dot && heatmap * 8.0 > float(ditherRank(dot_column, dot_row))) {
+    float segment = heatmap * 3.0;
+    int left = min(2, int(floor(segment)));
+    float fraction = segment - float(left);
+    vec3 heatmap_color = mix(u_heatmap_colors[left], u_heatmap_colors[left + 1], fraction);
+    color = mix(color, heatmap_color, u_heatmap_opacity);
   }
   uint owner = texelFetch(u_owner, source_cell, 0).r;
   if (owner != 0u && owner == u_selected_owner) color = mix(color, u_selected_color, 0.58);
@@ -322,7 +349,7 @@ export class BaseLayer extends ScreenLayer {
     return BASE_FRAGMENT;
   }
   protected allocate(gl: WebGL2RenderingContext): void {
-    this.#textures = Array.from({ length: 7 }, () => texture(gl));
+    this.#textures = Array.from({ length: 8 }, () => texture(gl));
   }
 
   protected draw(
@@ -343,6 +370,7 @@ export class BaseLayer extends ScreenLayer {
       this.#upload(gl, 4, frame.columns, frame.rows, frame.ribbon);
       this.#uploadOwner(gl, 5, frame.columns, frame.rows, frame.owner);
       this.#upload(gl, 6, frame.columns, frame.rows, frame.scalar);
+      this.#upload(gl, 7, frame.columns, frame.rows, frame.heatmap);
       this.#uploadedGeneration = frame.generation;
     }
     const names = [
@@ -353,6 +381,7 @@ export class BaseLayer extends ScreenLayer {
       "u_ribbon",
       "u_owner",
       "u_scalar",
+      "u_heatmap",
     ];
     this.#textures.forEach((value, index) => {
       gl.activeTexture(gl.TEXTURE0 + index);
@@ -428,6 +457,14 @@ export class BaseLayer extends ScreenLayer {
         theme.lines.motorway,
         theme.labels.medical,
       ]),
+    );
+    gl.uniform3fv(
+      gl.getUniformLocation(shader, "u_heatmap_colors[0]"),
+      normalized(this.provider.heatmapPalette()),
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(shader, "u_heatmap_opacity"),
+      this.provider.heatmapOpacity(),
     );
     gl.disable(gl.BLEND);
   }

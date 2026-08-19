@@ -65,6 +65,27 @@ export interface LowResBuildings3DOptions {
   heightScale?: number;
 }
 
+export type LowResHeatmapPoint = readonly [
+  longitude: number,
+  latitude: number,
+  weight?: number,
+];
+
+export interface LowResHeatmapOptions {
+  /** Compact longitude, latitude, optional-weight triplets. */
+  data?: readonly LowResHeatmapPoint[] | Float32Array;
+  visible?: boolean;
+  /** Kernel radius in CSS pixels. */
+  radius?: number;
+  /** Density multiplier applied before quantization. */
+  intensity?: number;
+  /** Stable upper density bound. Zero selects the current view maximum. */
+  maxDensity?: number;
+  opacity?: number;
+  /** Four colors sampled from low to high density. */
+  palette?: readonly [RGB, RGB, RGB, RGB];
+}
+
 export interface CellGeometry {
   /** Character-cell width in CSS pixels. */
   width: number;
@@ -134,6 +155,8 @@ export interface LowResBasemapOptions {
   camera?: LowResCameraOptions;
   /** Native MapLibre building extrusions for the surface projection. */
   buildings3D?: boolean | LowResBuildings3DOptions;
+  /** Optional worker-rendered point-density layer. */
+  heatmap?: LowResHeatmapOptions;
   cell?: Partial<CellGeometry>;
   locale?: string;
   labels?: boolean;
@@ -197,6 +220,11 @@ export interface LowResEventMap {
   buildingschange: {
     target: LowResBasemapLike;
     visible: boolean;
+  };
+  heatmapchange: {
+    target: LowResBasemapLike;
+    visible: boolean;
+    pointCount: number;
   };
   timechange: {
     target: LowResBasemapLike;
@@ -263,6 +291,8 @@ export interface RasterFrame {
   ribbon: Uint8Array;
   /** Quantized scalar values: 0 is missing and 1…255 span the configured range. */
   scalar: Uint8Array;
+  /** Quantized point density for the optional low-resolution heatmap. */
+  heatmap: Uint8Array;
   labels: LabelPlacement[];
   features: FeatureRecord[];
   warnings: LowResError[];

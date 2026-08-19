@@ -99,6 +99,47 @@ topographic factories provide defaults that can be overridden through their
 `numeric` option. Sources currently need MVT data, with OpenMapTiles property
 conventions for the built-in adapters.
 
+## Heatmaps
+
+The demo compares two renderers using 100,000 weighted NYC Uber pickup
+locations from the public
+[deck.gl screen-grid dataset](https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/screen-grid/uber-pickup-locations.json).
+
+A standard MapLibre heatmap can be inserted below the marker boundary. It stays
+smooth and remains outside package theme and greyscale changes:
+
+```ts
+map.addLayer(nativeHeatmapLayer, basemap.layerIds.markers);
+```
+
+The built-in low-resolution heatmap accepts compact
+`[longitude, latitude, weight]` triplets. Density is accumulated in the worker,
+quantized to one byte per cell, and expressed through ordered square-dot
+dithering:
+
+```ts
+basemap.setHeatmap({
+  data: pickupLocations,
+  visible: true,
+  radius: 36,
+  intensity: 1,
+  maxDensity: 192,
+  opacity: 0.76,
+  palette: [
+    [40, 109, 155],
+    [87, 173, 133],
+    [239, 178, 75],
+    [226, 76, 91],
+  ],
+});
+```
+
+`maxDensity: 0` normalizes against the current view. A fixed positive maximum
+is preferable for comparisons and animated data because it prevents the color
+domain from changing while panning. Custom palettes participate in the active
+greyscale mode. Use `setHeatmapData()`, `setHeatmapVisible()`, or
+`clearHeatmap()` for runtime updates.
+
 ## Camera modes
 
 `screen` is the default. Dots stay square and locked to the viewport while pan,
@@ -153,9 +194,11 @@ labels are not yet part of surface mode.
 - `setLayers(...)`, `getLayers()`, and `setLayerVisible(...)`
 - `setProjectionMode(...)` and `setCamera(...)`
 - `setBuildings3DVisible(...)` and `getBuildings3DVisible()`
+- `setHeatmap(...)`, `setHeatmapData(...)`, `setHeatmapVisible(...)`,
+  `getHeatmapOptions()`, and `clearHeatmap()`
 - `setSelectedFeature(...)`, `queryFeatures(...)`, and `refresh()`
 - typed load, render, error, feature, selection, style, layer, time,
-  projection, and 3D-building events
+  projection, 3D-building, and heatmap events
 
 Hover and persistent selection use the transferable owner texture. Query
 results include `sourceId` and `packId`, and `featureMatches` provides a helper
@@ -167,9 +210,10 @@ for filtering those results.
    failures, and maintains per-source decoded LRUs.
 2. Enabled packs normalize and deterministically order semantic features.
 3. Polygons become categorical or scalar dot grids; water derives coastlines.
-4. Integer line paths compete by semantic rank inside each character cell.
-5. Compact typed buffers are transferred to a WebGL 2 compositor.
-6. Labels are independently budgeted and rendered above consumer data.
+4. Point weights accumulate into a bounded, quantized density grid.
+5. Integer line paths compete by semantic rank inside each character cell.
+6. Compact typed buffers are transferred to a WebGL 2 compositor.
+7. Labels are independently budgeted and rendered above consumer data.
 
 During interaction, the latest buffers are reprojected while the worker
 coalesces obsolete requests. `moveend` always requests an exact frame.

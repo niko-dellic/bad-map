@@ -4,11 +4,11 @@ export { DARK_THEME, LIGHT_THEME } from "./theme";
 export { composeTheme, greyscaleColor, relativeLuminance } from "./theme";
 export { featureMatches, landuse, marine, political, streets, topographic, transit, weather, } from "./packs";
 export { FillClass, LabelInk, LineClass, bandFor, effectiveStyleZoom, sourceZoom, } from "./style";
-export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResCameraOptions, LowResBuildings3DOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTheme, RGB, } from "./types";
+export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResCameraOptions, LowResBuildings3DOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResHeatmapOptions, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTheme, RGB, } from "./types";
 
 // dist/low-res-basemap.d.ts
 import { type Map as MapLibreMap, type PointLike } from "maplibre-gl";
-import type { CellGeometry, LowResBasemapOptions, LowResColorMode, LowResEventMap, LowResFeature, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource } from "./types";
+import type { CellGeometry, LowResBasemapOptions, LowResColorMode, LowResEventMap, LowResFeature, LowResHeatmapOptions, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource } from "./types";
 type Listener<K extends keyof LowResEventMap> = (event: LowResEventMap[K]) => void;
 export declare class LowResBasemap {
     #private;
@@ -32,6 +32,13 @@ export declare class LowResBasemap {
     setCamera(options: LowResBasemapOptions["camera"]): this;
     setBuildings3DVisible(visible: boolean): this;
     getBuildings3DVisible(): boolean;
+    setHeatmap(options: LowResHeatmapOptions): this;
+    setHeatmapData(data: readonly LowResHeatmapPoint[] | Float32Array): this;
+    setHeatmapVisible(visible: boolean): this;
+    clearHeatmap(): this;
+    getHeatmapOptions(): Omit<LowResHeatmapOptions, "data"> & {
+        pointCount: number;
+    };
     setSource(source: LowResSource): this;
     setSources(sources: Record<string, LowResSource>): this;
     setLayers(layers: LowResLayerPackDescriptor[]): this;

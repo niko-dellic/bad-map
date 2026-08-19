@@ -6,7 +6,16 @@ interface Diagnostics {
   lastGeneration: number;
   lastDurationMs: number;
   generations: number[];
+  heatmapEvents: number;
 }
+
+const UBER_DATA_URL =
+  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/screen-grid/uber-pickup-locations.json";
+const pickupFixture = Array.from({ length: 625 }, (_, index) => {
+  const x = index % 25;
+  const y = Math.floor(index / 25);
+  return [-74.025 + x * 0.0015, 40.695 + y * 0.0015, 1 + ((x + y) % 8)];
+});
 
 async function diagnostics(page: import("@playwright/test").Page) {
   return page.evaluate<Diagnostics>(() =>
@@ -18,6 +27,9 @@ async function diagnostics(page: import("@playwright/test").Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.route(UBER_DATA_URL, (route) =>
+    route.fulfill({ json: pickupFixture }),
+  );
   await page.goto("/");
   await expect(page.locator("#status")).toContainText("rendered in");
 });
@@ -243,6 +255,101 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
     return map.getLayoutProperty(basemap.layerIds.buildings, "visibility");
   });
   expect(disabled).toBe("none");
+});
+
+test("compares native and worker-rendered pickup heatmaps", async ({
+  page,
+}) => {
+  await page.locator("#heatmap-mode").selectOption("native");
+  await expect(page.locator("#heatmap-status")).toContainText(
+    "weighted pickups · native",
+  );
+  const native = await page.evaluate(() => {
+    const { map, basemap } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: {
+            getLayer(id: string): { type?: string } | undefined;
+            getLayersOrder(): string[];
+            getLayoutProperty(id: string, property: string): unknown;
+          };
+          basemap: {
+            layerIds: { markers: string };
+            getHeatmapOptions(): { visible?: boolean; pointCount: number };
+          };
+        };
+      }
+    ).__badMapDemo;
+    const order = map.getLayersOrder();
+    return {
+      type: map.getLayer("demo-uber-native-heatmap")?.type,
+      visibility: map.getLayoutProperty(
+        "demo-uber-native-heatmap",
+        "visibility",
+      ),
+      belowMarkers:
+        order.indexOf("demo-uber-native-heatmap") <
+        order.indexOf(basemap.layerIds.markers),
+      lowResVisible: basemap.getHeatmapOptions().visible,
+    };
+  });
+  expect(native).toEqual({
+    type: "heatmap",
+    visibility: "visible",
+    belowMarkers: true,
+    lowResVisible: false,
+  });
+
+  const before = await diagnostics(page);
+  await page.locator("#heatmap-mode").selectOption("lowres");
+  await expect(page.locator("#heatmap-status")).toContainText(
+    "weighted pickups · lowres",
+  );
+  await expect
+    .poll(async () => (await diagnostics(page)).lastGeneration)
+    .toBeGreaterThan(before.lastGeneration);
+  const lowRes = await page.evaluate(() => {
+    const { map, basemap } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { getLayoutProperty(id: string, property: string): unknown };
+          basemap: {
+            getHeatmapOptions(): {
+              visible?: boolean;
+              pointCount: number;
+              palette?: readonly (readonly [number, number, number])[];
+            };
+          };
+        };
+      }
+    ).__badMapDemo;
+    const options = basemap.getHeatmapOptions();
+    return {
+      ...options,
+      nativeVisibility: map.getLayoutProperty(
+        "demo-uber-native-heatmap",
+        "visibility",
+      ),
+      greyscale: options.palette?.every(
+        ([red, green, blue]) => red === green && green === blue,
+      ),
+    };
+  });
+  expect(lowRes).toMatchObject({
+    visible: true,
+    pointCount: pickupFixture.length,
+    nativeVisibility: "none",
+    greyscale: true,
+  });
+
+  const afterMode = await diagnostics(page);
+  await page.locator("#heatmap-radius").fill("52");
+  await expect
+    .poll(async () => (await diagnostics(page)).lastGeneration)
+    .toBeGreaterThan(afterMode.lastGeneration);
+  expect((await diagnostics(page)).heatmapEvents).toBeGreaterThan(
+    before.heatmapEvents,
+  );
 });
 
 test("collapses the settings panel without hiding hover information", async ({

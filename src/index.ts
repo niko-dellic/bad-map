@@ -32,6 +32,8 @@ export type {
   LowResEventMap,
   LowResFeature,
   LowResFeatureKind,
+  LowResHeatmapOptions,
+  LowResHeatmapPoint,
   LowResLayerPackDescriptor,
   LowResProjectionMode,
   LowResSource,
