@@ -1,4 +1,5 @@
 import type { Map as MapLibreMap, PointLike } from "maplibre-gl";
+import type { Feature, GeoJsonProperties, GeoJSON } from "geojson";
 
 export type RGB = readonly [number, number, number];
 
@@ -72,6 +73,23 @@ export interface LowResBuildings3DOptions {
   heightScale?: number;
 }
 
+export type LowResFogMode = "regular" | "dithered";
+
+export interface LowResFogOptions {
+  /** Whether fog is shown in the 3D surface projection. */
+  visible?: boolean;
+  /** Smooth alpha blending or viewport-anchored ordered dithering. */
+  mode?: LowResFogMode;
+  /** Screen-space depth at which fog begins: zero is bottom, one is top. */
+  start?: number;
+  /** Screen-space depth at which fog reaches full strength. */
+  end?: number;
+  /** Maximum fog opacity from zero to one. */
+  opacity?: number;
+  /** Optional fixed fog color. The active theme ground color is used by default. */
+  color?: RGB | undefined;
+}
+
 export type LowResHeatmapPoint = readonly [
   longitude: number,
   latitude: number,
@@ -91,6 +109,144 @@ export interface LowResHeatmapOptions {
   opacity?: number;
   /** Four colors sampled from low to high density. Basemap greyscale does not modify them. */
   palette?: readonly [RGB, RGB, RGB, RGB];
+}
+
+export type LowResDataAccessor<T> =
+  T | ((feature: Feature, index: number) => T);
+
+export interface LowResDataLayerBase {
+  /** Stable ID used to update, order, and remove this layer. */
+  id: string;
+  visible?: boolean;
+  opacity?: number;
+  /** Higher values draw later. Equal values retain insertion order. */
+  order?: number;
+  pickable?: boolean;
+}
+
+export interface LowResHeatmapDataLayer extends LowResDataLayerBase {
+  type: "heatmap";
+  data: readonly LowResHeatmapPoint[] | Float32Array;
+  radius?: number;
+  intensity?: number;
+  maxDensity?: number;
+  palette?: readonly [RGB, RGB, RGB, RGB];
+}
+
+export interface LowResWaypoint {
+  id?: string | number;
+  position: readonly [longitude: number, latitude: number];
+  properties?: GeoJsonProperties;
+  color?: RGB;
+  haloColor?: RGB;
+  size?: number;
+}
+
+export interface LowResWaypointDataLayer extends LowResDataLayerBase {
+  type: "waypoint";
+  data: readonly LowResWaypoint[];
+  color?: RGB;
+  haloColor?: RGB;
+  /** Glyph size in CSS pixels. */
+  size?: number;
+}
+
+export interface LowResGeoJSONPointStyle {
+  color?: LowResDataAccessor<RGB>;
+  radius?: LowResDataAccessor<number>;
+}
+
+export interface LowResGeoJSONLineStyle {
+  color?: LowResDataAccessor<RGB>;
+  width?: LowResDataAccessor<number>;
+  dash?: readonly [on: number, off: number];
+}
+
+export interface LowResGeoJSONFillStyle {
+  color?: LowResDataAccessor<RGB>;
+  opacity?: LowResDataAccessor<number>;
+  outlineColor?: LowResDataAccessor<RGB>;
+  outlineWidth?: LowResDataAccessor<number>;
+}
+
+export interface LowResGeoJSONDataLayer extends LowResDataLayerBase {
+  type: "geojson";
+  data: GeoJSON;
+  point?: LowResGeoJSONPointStyle;
+  line?: LowResGeoJSONLineStyle;
+  fill?: LowResGeoJSONFillStyle;
+}
+
+export interface LowResTrip {
+  id?: string | number;
+  path: readonly (readonly [longitude: number, latitude: number])[];
+  timestamps: readonly number[];
+  color?: RGB;
+  properties?: GeoJsonProperties;
+}
+
+export interface LowResTripsDataLayer extends LowResDataLayerBase {
+  type: "trips";
+  data: readonly LowResTrip[];
+  color?: RGB;
+  width?: number;
+  trailLength?: number;
+  currentTime?: number;
+  loopLength?: number;
+  speed?: number;
+  playing?: boolean;
+}
+
+export type LowResDataLayer =
+  | LowResHeatmapDataLayer
+  | LowResWaypointDataLayer
+  | LowResGeoJSONDataLayer
+  | LowResTripsDataLayer;
+
+export type LowResDataLayerUpdate = Partial<
+  Omit<LowResDataLayerBase, "id"> & {
+    data: unknown;
+    radius: number;
+    intensity: number;
+    maxDensity: number;
+    palette: readonly [RGB, RGB, RGB, RGB];
+    color: RGB;
+    haloColor: RGB;
+    size: number;
+    point: LowResGeoJSONPointStyle;
+    line: LowResGeoJSONLineStyle;
+    fill: LowResGeoJSONFillStyle;
+    width: number;
+    trailLength: number;
+    currentTime: number;
+    loopLength: number;
+    speed: number;
+    playing: boolean;
+  }
+>;
+
+export interface LowResDataLayerState {
+  id: string;
+  type: LowResDataLayer["type"];
+  visible: boolean;
+  opacity: number;
+  order: number;
+  pickable: boolean;
+  featureCount: number;
+}
+
+export interface LowResTripsPlayback {
+  playing?: boolean;
+  currentTime?: number;
+  speed?: number;
+  trailLength?: number;
+}
+
+export interface LowResTripsSeekOptions {
+  /** Override playback after seeking. Omit to preserve the current state. */
+  playing?: boolean;
+  /** Wrap through the loop boundary instead of clamping to its endpoints. */
+  wrap?: boolean;
 }
 
 export interface CellGeometry {
@@ -158,12 +314,17 @@ export interface LowResBasemapOptions {
   theme?: BuiltinThemeName | LowResTheme;
   /** Basemap cartography mode. Visualization and data palettes remain unchanged. */
   colorMode?: LowResColorMode;
+  /** Ground compositor projection. Defaults to the geographic surface. */
   projectionMode?: LowResProjectionMode;
   camera?: LowResCameraOptions;
   /** Native MapLibre building extrusions for the surface projection. */
   buildings3D?: boolean | LowResBuildings3DOptions;
+  /** Atmospheric fog for the 3D surface projection. */
+  fog?: boolean | LowResFogOptions;
   /** Optional worker-rendered point-density layer. */
   heatmap?: LowResHeatmapOptions;
+  /** Package-owned visualization layers rendered outside basemap greyscale. */
+  dataLayers?: readonly LowResDataLayer[];
   cell?: Partial<CellGeometry>;
   locale?: string;
   /** Label visibility shorthand, or detailed label rendering options. */
@@ -194,18 +355,34 @@ export interface LowResFeature {
   lngLat: { lng: number; lat: number };
 }
 
+export interface LowResDataFeature {
+  owner: number;
+  layerId: string;
+  layerType: LowResDataLayer["type"];
+  featureId?: string | number;
+  properties: GeoJsonProperties;
+  cell: { column: number; row: number };
+  lngLat: { lng: number; lat: number };
+}
+
 export interface LowResError {
-  code: "source" | "tile" | "decode" | "render" | "unsupported-camera";
+  code: "source" | "tile" | "decode" | "render" | "data" | "unsupported-camera";
   message: string;
   fatal: boolean;
   cause?: unknown;
   sourceId?: string;
   packId?: string;
+  layerId?: string;
 }
 
 export interface LowResEventMap {
   load: { target: LowResBasemapLike };
   render: { target: LowResBasemapLike; durationMs: number; generation: number };
+  datarender: {
+    target: LowResBasemapLike;
+    durationMs: number;
+    generation: number;
+  };
   error: { target: LowResBasemapLike; error: LowResError };
   featureenter: { target: LowResBasemapLike; feature: LowResFeature };
   featureleave: { target: LowResBasemapLike; feature: LowResFeature };
@@ -231,10 +408,37 @@ export interface LowResEventMap {
     target: LowResBasemapLike;
     visible: boolean;
   };
+  fogchange: {
+    target: LowResBasemapLike;
+    visible: boolean;
+    mode: LowResFogMode;
+    start: number;
+    end: number;
+    opacity: number;
+    color: RGB;
+  };
   heatmapchange: {
     target: LowResBasemapLike;
     visible: boolean;
     pointCount: number;
+  };
+  datalayerchange: {
+    target: LowResBasemapLike;
+    id: string;
+    action: "upsert" | "remove" | "clear";
+    layer?: LowResDataLayerState;
+  };
+  datafeatureenter: {
+    target: LowResBasemapLike;
+    feature: LowResDataFeature;
+  };
+  datafeatureleave: {
+    target: LowResBasemapLike;
+    feature: LowResDataFeature;
+  };
+  datafeatureclick: {
+    target: LowResBasemapLike;
+    feature: LowResDataFeature;
   };
   timechange: {
     target: LowResBasemapLike;
@@ -250,6 +454,7 @@ export interface LowResBasemapLike {
     readonly data: string;
     readonly markers: string;
     readonly labels: string;
+    readonly fog: string;
     readonly interaction: string;
   };
   queryFeatures(point: PointLike): LowResFeature[];
@@ -307,6 +512,28 @@ export interface RasterFrame {
   heatmap: Uint8Array;
   labels: LabelPlacement[];
   features: FeatureRecord[];
+  warnings: LowResError[];
+}
+
+export interface LowResDataFeatureRecord {
+  owner: number;
+  layerId: string;
+  layerType: LowResDataLayer["type"];
+  featureId?: string | number;
+  properties: GeoJsonProperties;
+}
+
+export interface DataRasterFrame {
+  generation: number;
+  durationMs: number;
+  state: RasterViewState;
+  dotColumns: number;
+  dotRows: number;
+  data: Uint8Array;
+  markers: Uint8Array;
+  dataOwner: Uint32Array;
+  markerOwner: Uint32Array;
+  features: LowResDataFeatureRecord[];
   warnings: LowResError[];
 }
 

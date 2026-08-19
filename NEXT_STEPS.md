@@ -21,10 +21,12 @@ geometry, independent labels, typed nonfatal failures, and public MapLibre APIs.
 | 5. Visualization and picking   | Complete            | Data, marker, label, and interaction boundaries; owner-texture hover; persistent selection; pack/source-aware queries; filter helper                              |
 | 6. Rotation and 3D             | Experimental        | Bearing-aware screen mode, camera-footprint-fitted world surface, geographic picking, and optional theme-aware native building extrusions                         |
 | 7. Point-density heatmaps      | Foundation complete | Native comparison plus weighted worker kernels, stable domains, compact density buffers, a dedicated data compositor, square-dot dithering, and runtime controls  |
+| 8. Extensible data overlays    | Complete            | ID-based heatmap, waypoint, GeoJSON, and trips layers; independent worker; RGBA/owner buffers; playback; picking; and lazy reference demos                        |
 
 The demo exposes appearance, lattice, camera, layer, source, and heatmap options
 in a resizable tabbed side panel. Its tabs and icon actions remain fixed above
-the scrolling controls. Greyscale and camera rotation are on by default.
+the scrolling controls. Greyscale, the geographic surface, and camera rotation
+are on by default.
 
 ## Architecture now in place
 
@@ -32,12 +34,13 @@ the scrolling controls. Greyscale and camera rotation are on by default.
 flowchart LR
   S["Named TileJSON sources"] --> W["Worker loaders and bounded caches"]
   W --> P["Serializable semantic packs"]
-  P --> C["Categorical, scalar, density, owner, and label buffers"]
+  P --> C["Categorical, scalar, owner, and label buffers"]
+  I["Application data registry"] --> R["Independent data-raster worker"]
+  R --> T["Cached static and 30 fps animated RGBA buffers"]
   C --> B["Cartography compositor"]
-  C --> D["Transparent data compositor"]
+  T --> D["Transparent data and marker compositors"]
   B --> D
-  D --> M["Application data and markers"]
-  M --> L["Labels and interaction"]
+  D --> L["Labels and interaction"]
 ```
 
 ### Semantic packs
@@ -68,9 +71,10 @@ The public ordering contract is:
 bad-map-base → bad-map-buildings-3d → bad-map-data → bad-map-markers → bad-map-labels → bad-map-interaction
 ```
 
-`bad-map-data` is a transparent compositor for package-owned scalar and density
-textures. It is the shared extension boundary for future low-resolution data
-effects. The marker and interaction IDs remain no-op insertion boundaries.
+`bad-map-data` is a transparent compositor for package-owned scalar, density,
+GeoJSON, and trip textures. `bad-map-markers` renders lattice-aligned locator
+targets from the same registry; the interaction ID remains an insertion
+boundary.
 Native MapLibre, interleaved deck.gl, and compositor data palettes remain
 untouched by basemap theme and greyscale composition.
 
@@ -108,13 +112,17 @@ deliberately described as low-resolution 3D rather than terminal emulation.
   markers.
 - Publish reference schemas and fixture generators for custom MVT producers.
 
-### 3. Heatmap depth
+### 3. Data-layer depth
 
 - Add MVT and streaming point inputs alongside compact in-memory triplets.
 - Add concurrent density channels with independent domains and palettes.
 - Add optional cell-value queries and density-aware accessibility output.
 - Add temporal interpolation and deterministic cross-frame normalization.
 - Add metre-based kernels for comparable geographic radii across zoom levels.
+- Add streaming updates, spatial indexes for very large inputs, and selectable
+  blend modes for overlapping layers.
+- Add metre-based GeoJSON widths and radius units alongside CSS-pixel styles.
+- Add accessible waypoint labels and collision-aware data annotations.
 
 ### 4. Source resilience
 

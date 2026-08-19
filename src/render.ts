@@ -9,10 +9,26 @@ import {
   reprojectionTransform,
 } from "./geometry";
 import { FillClass, LabelInk, LineClass } from "./style";
-import type { LowResTheme, RGB, RasterFrame } from "./types";
+import type {
+  DataRasterFrame,
+  LowResFogMode,
+  LowResTheme,
+  RGB,
+  RasterFrame,
+} from "./types";
+
+interface FogRenderState {
+  visible: boolean;
+  mode: LowResFogMode;
+  start: number;
+  end: number;
+  opacity: number;
+  color: RGB;
+}
 
 interface FrameProvider {
   frame(): RasterFrame | undefined;
+  dataFrame(): DataRasterFrame | undefined;
   viewState(): RasterFrame["state"] | undefined;
   theme(): LowResTheme;
   labelsVisible(): boolean;
@@ -22,8 +38,7 @@ interface FrameProvider {
   selectedOwner(): number;
   projectionMode(): "screen" | "surface";
   scalarPalette(): readonly [RGB, RGB, RGB, RGB];
-  heatmapPalette(): readonly [RGB, RGB, RGB, RGB];
-  heatmapOpacity(): number;
+  fog(): FogRenderState;
 }
 
 /** A stable no-op custom layer used as a public insertion boundary. */
@@ -157,7 +172,6 @@ void main() {
                      (float(dot_row) + 0.5) * u_cell_size.y * 0.25);
   vec2 distance_to_dot = abs(output_local - center);
   bool in_dot = distance_to_dot.x <= u_dot_size * 0.5 && distance_to_dot.y <= u_dot_size * 0.5;
-
   int source_dot_column = clamp(int(floor(source_local.x / (u_cell_size.x * 0.5))), 0, 1);
   int source_dot_row = clamp(int(floor(source_local.y / (u_cell_size.y * 0.25))), 0, 3);
   int mask = int(texelFetch(u_mask, source_cell, 0).r * 255.0 + 0.5);
@@ -178,7 +192,7 @@ const DATA_FRAGMENT = `#version 300 es
 precision highp float;
 precision highp int;
 uniform sampler2D u_scalar;
-uniform sampler2D u_heatmap;
+uniform sampler2D u_overlay;
 uniform vec2 u_current_view_size;
 uniform vec2 u_frame_view_size;
 uniform float u_pixel_ratio;
@@ -188,24 +202,9 @@ uniform vec2 u_cell_size;
 uniform float u_dot_size;
 uniform ivec2 u_grid_size;
 uniform vec3 u_scalar_colors[4];
-uniform vec3 u_heatmap_colors[4];
-uniform float u_heatmap_opacity;
 uniform int u_surface;
 in vec2 v_surface_pixel;
 out vec4 out_color;
-
-int ditherRank(int column, int row) {
-  if (column == 0) {
-    if (row == 0) return 0;
-    if (row == 1) return 5;
-    if (row == 2) return 2;
-    return 7;
-  }
-  if (row == 0) return 3;
-  if (row == 1) return 6;
-  if (row == 2) return 1;
-  return 4;
-}
 
 vec3 paletteColor(float value, vec3 colors[4]) {
   float segment = value * 3.0;
@@ -240,16 +239,59 @@ void main() {
                      (float(dot_row) + 0.5) * u_cell_size.y * 0.25);
   vec2 distance_to_dot = abs(output_local - center);
   bool in_dot = distance_to_dot.x <= u_dot_size * 0.5 && distance_to_dot.y <= u_dot_size * 0.5;
-  float heatmap = texelFetch(u_heatmap, source_cell, 0).r;
-  if (heatmap > 0.0 && in_dot && heatmap * 8.0 > float(ditherRank(dot_column, dot_row))) {
-    vec3 heatmap_color = paletteColor(heatmap, u_heatmap_colors);
-    float heatmap_alpha = u_heatmap_opacity;
-    float combined_alpha = heatmap_alpha + alpha * (1.0 - heatmap_alpha);
-    color = (heatmap_color * heatmap_alpha + color * alpha * (1.0 - heatmap_alpha)) /
+  vec2 source_local = source_pixel - vec2(source_cell) * u_cell_size;
+  int source_dot_column = clamp(int(floor(source_local.x / (u_cell_size.x * 0.5))), 0, 1);
+  int source_dot_row = clamp(int(floor(source_local.y / (u_cell_size.y * 0.25))), 0, 3);
+  ivec2 source_dot = ivec2(source_cell.x * 2 + source_dot_column,
+                            source_cell.y * 4 + source_dot_row);
+  vec4 overlay = texelFetch(u_overlay, source_dot, 0);
+  if (overlay.a > 0.0 && in_dot) {
+    float combined_alpha = overlay.a + alpha * (1.0 - overlay.a);
+    color = (overlay.rgb * overlay.a + color * alpha * (1.0 - overlay.a)) /
             max(combined_alpha, 0.0001);
     alpha = combined_alpha;
   }
   out_color = vec4(color, alpha);
+}`;
+
+const MARKER_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D u_overlay;
+uniform vec2 u_current_view_size;
+uniform vec2 u_frame_view_size;
+uniform float u_pixel_ratio;
+uniform mat2 u_reproject_matrix;
+uniform vec2 u_reproject_offset;
+uniform vec2 u_cell_size;
+uniform float u_dot_size;
+uniform ivec2 u_grid_size;
+uniform int u_surface;
+in vec2 v_surface_pixel;
+out vec4 out_color;
+void main() {
+  vec2 top_pixel = vec2(gl_FragCoord.x / u_pixel_ratio,
+                        u_current_view_size.y - gl_FragCoord.y / u_pixel_ratio);
+  vec2 source_pixel = u_surface == 1 ? v_surface_pixel : u_reproject_matrix * top_pixel + u_reproject_offset;
+  ivec2 source_cell = ivec2(floor(source_pixel / u_cell_size));
+  if (source_cell.x < 0 || source_cell.y < 0 || source_cell.x >= u_grid_size.x || source_cell.y >= u_grid_size.y) {
+    out_color = vec4(0.0);
+    return;
+  }
+  vec2 source_local = source_pixel - vec2(source_cell) * u_cell_size;
+  int source_dot_column = clamp(int(floor(source_local.x / (u_cell_size.x * 0.5))), 0, 1);
+  int source_dot_row = clamp(int(floor(source_local.y / (u_cell_size.y * 0.25))), 0, 3);
+  vec2 lattice_pixel = u_surface == 1 ? source_pixel : top_pixel;
+  vec2 output_local = lattice_pixel - floor(lattice_pixel / u_cell_size) * u_cell_size;
+  int dot_column = clamp(int(floor(output_local.x / (u_cell_size.x * 0.5))), 0, 1);
+  int dot_row = clamp(int(floor(output_local.y / (u_cell_size.y * 0.25))), 0, 3);
+  vec2 center = vec2((float(dot_column) + 0.5) * u_cell_size.x * 0.5,
+                     (float(dot_row) + 0.5) * u_cell_size.y * 0.25);
+  bool in_dot = all(lessThanEqual(abs(output_local - center), vec2(u_dot_size * 0.5)));
+  ivec2 source_dot = ivec2(source_cell.x * 2 + source_dot_column,
+                            source_cell.y * 4 + source_dot_row);
+  vec4 overlay = texelFetch(u_overlay, source_dot, 0);
+  out_color = in_dot ? overlay : vec4(0.0);
 }`;
 
 const LABEL_FRAGMENT = `#version 300 es
@@ -283,6 +325,79 @@ void main() {
   }
   out_color = texture(u_texture, source_pixel / u_frame_view_size);
   out_color.a *= u_opacity;
+}`;
+
+export const BAYER_4X4 = [
+  0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
+] as const;
+
+const FOG_VERTEX = `#version 300 es
+precision highp float;
+in vec2 a_position;
+void main() {
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+
+const FOG_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+uniform mat4 u_inverse_map_matrix;
+uniform vec4 u_world_bounds;
+uniform vec2 u_view_size;
+uniform float u_pixel_ratio;
+uniform float u_start;
+uniform float u_end;
+uniform float u_opacity;
+uniform float u_pitch_mix;
+uniform vec3 u_color;
+uniform int u_dithered;
+out vec4 out_color;
+
+bool groundIntersection(vec2 ndc, out vec3 ground) {
+  vec4 near_h = u_inverse_map_matrix * vec4(ndc, -1.0, 1.0);
+  vec4 far_h = u_inverse_map_matrix * vec4(ndc, 1.0, 1.0);
+  if (abs(near_h.w) < 0.000001 || abs(far_h.w) < 0.000001) return false;
+  vec3 near_point = near_h.xyz / near_h.w;
+  vec3 far_point = far_h.xyz / far_h.w;
+  vec3 ray = far_point - near_point;
+  if (abs(ray.z) < 0.000001) return false;
+  float t = -near_point.z / ray.z;
+  if (t < 0.0) return false;
+  ground = near_point + ray * t;
+  return true;
+}
+
+float bayerThreshold(ivec2 pixel) {
+  const float values[16] = float[16](${BAYER_4X4.map((value) => `${value}.0`).join(", ")});
+  int x = pixel.x - (pixel.x / 4) * 4;
+  int y = pixel.y - (pixel.y / 4) * 4;
+  return (values[y * 4 + x] + 0.5) / 16.0;
+}
+
+void main() {
+  vec2 css_pixel = gl_FragCoord.xy / u_pixel_ratio;
+  vec2 ndc = css_pixel / u_view_size * 2.0 - 1.0;
+  vec3 ground;
+  float screen_depth = clamp(css_pixel.y / u_view_size.y, 0.0, 1.0);
+  float fog_amount = 1.0;
+  if (groundIntersection(ndc, ground)) {
+    float distance_fog = smoothstep(u_start, u_end, screen_depth);
+    vec2 extent = max(u_world_bounds.zw - u_world_bounds.xy, vec2(0.000001));
+    vec2 frame_uv = (ground.xy - u_world_bounds.xy) / extent;
+    float edge_distance = min(min(frame_uv.x, 1.0 - frame_uv.x),
+                              min(frame_uv.y, 1.0 - frame_uv.y));
+    float boundary_fog = 1.0 - smoothstep(0.0, 0.06, edge_distance);
+    fog_amount = max(distance_fog, boundary_fog);
+  }
+
+  fog_amount = clamp(fog_amount * u_pitch_mix, 0.0, 1.0);
+  float alpha = fog_amount * u_opacity;
+  if (u_dithered == 1) {
+    ivec2 css_integer = ivec2(floor(css_pixel));
+    alpha = fog_amount >= bayerThreshold(css_integer) ? u_opacity : 0.0;
+  }
+  if (alpha <= 0.0) discard;
+  out_color = vec4(u_color, alpha);
 }`;
 
 function compile(
@@ -336,6 +451,136 @@ function normalized(colors: readonly RGB[]): Float32Array {
   return new Float32Array(
     colors.flatMap((color) => color.map((channel) => channel / 255)),
   );
+}
+
+export function bayer4Threshold(x: number, y: number): number {
+  const column = ((Math.floor(x) % 4) + 4) % 4;
+  const row = ((Math.floor(y) % 4) + 4) % 4;
+  return (BAYER_4X4[row * 4 + column]! + 0.5) / 16;
+}
+
+export function fogBoundaryAmount(
+  point: readonly [number, number],
+  bounds: readonly [number, number, number, number],
+  halo = 0.06,
+): number {
+  const width = Math.max(Number.EPSILON, bounds[2] - bounds[0]);
+  const height = Math.max(Number.EPSILON, bounds[3] - bounds[1]);
+  const x = (point[0] - bounds[0]) / width;
+  const y = (point[1] - bounds[1]) / height;
+  const edgeDistance = Math.min(x, 1 - x, y, 1 - y);
+  return 1 - smoothstep(0, Math.max(Number.EPSILON, halo), edgeDistance);
+}
+
+export function invertMatrix4(
+  matrix: ArrayLike<number>,
+): Float32Array | undefined {
+  if (matrix.length < 16) return undefined;
+  const a00 = matrix[0]!,
+    a01 = matrix[1]!,
+    a02 = matrix[2]!,
+    a03 = matrix[3]!;
+  const a10 = matrix[4]!,
+    a11 = matrix[5]!,
+    a12 = matrix[6]!,
+    a13 = matrix[7]!;
+  const a20 = matrix[8]!,
+    a21 = matrix[9]!,
+    a22 = matrix[10]!,
+    a23 = matrix[11]!;
+  const a30 = matrix[12]!,
+    a31 = matrix[13]!,
+    a32 = matrix[14]!,
+    a33 = matrix[15]!;
+  const b00 = a00 * a11 - a01 * a10;
+  const b01 = a00 * a12 - a02 * a10;
+  const b02 = a00 * a13 - a03 * a10;
+  const b03 = a01 * a12 - a02 * a11;
+  const b04 = a01 * a13 - a03 * a11;
+  const b05 = a02 * a13 - a03 * a12;
+  const b06 = a20 * a31 - a21 * a30;
+  const b07 = a20 * a32 - a22 * a30;
+  const b08 = a20 * a33 - a23 * a30;
+  const b09 = a21 * a32 - a22 * a31;
+  const b10 = a21 * a33 - a23 * a31;
+  const b11 = a22 * a33 - a23 * a32;
+  const determinant =
+    b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-15)
+    return undefined;
+  const inverseDeterminant = 1 / determinant;
+  return new Float32Array([
+    (a11 * b11 - a12 * b10 + a13 * b09) * inverseDeterminant,
+    (a02 * b10 - a01 * b11 - a03 * b09) * inverseDeterminant,
+    (a31 * b05 - a32 * b04 + a33 * b03) * inverseDeterminant,
+    (a22 * b04 - a21 * b05 - a23 * b03) * inverseDeterminant,
+    (a12 * b08 - a10 * b11 - a13 * b07) * inverseDeterminant,
+    (a00 * b11 - a02 * b08 + a03 * b07) * inverseDeterminant,
+    (a32 * b02 - a30 * b05 - a33 * b01) * inverseDeterminant,
+    (a20 * b05 - a22 * b02 + a23 * b01) * inverseDeterminant,
+    (a10 * b10 - a11 * b08 + a13 * b06) * inverseDeterminant,
+    (a01 * b08 - a00 * b10 - a03 * b06) * inverseDeterminant,
+    (a30 * b04 - a31 * b02 + a33 * b00) * inverseDeterminant,
+    (a21 * b02 - a20 * b04 - a23 * b00) * inverseDeterminant,
+    (a11 * b07 - a10 * b09 - a12 * b06) * inverseDeterminant,
+    (a00 * b09 - a01 * b07 + a02 * b06) * inverseDeterminant,
+    (a31 * b01 - a30 * b03 - a32 * b00) * inverseDeterminant,
+    (a20 * b03 - a21 * b01 + a22 * b00) * inverseDeterminant,
+  ]);
+}
+
+export interface GroundRayIntersection {
+  point: readonly [number, number, number];
+  distance: number;
+}
+
+export function groundRayIntersection(
+  inverseMatrix: ArrayLike<number>,
+  ndc: readonly [number, number],
+): GroundRayIntersection | undefined {
+  const unproject = (z: number): [number, number, number] | undefined => {
+    const x = ndc[0],
+      y = ndc[1];
+    const w =
+      inverseMatrix[3]! * x +
+      inverseMatrix[7]! * y +
+      inverseMatrix[11]! * z +
+      inverseMatrix[15]!;
+    if (!Number.isFinite(w) || Math.abs(w) < 1e-12) return undefined;
+    return [
+      (inverseMatrix[0]! * x +
+        inverseMatrix[4]! * y +
+        inverseMatrix[8]! * z +
+        inverseMatrix[12]!) /
+        w,
+      (inverseMatrix[1]! * x +
+        inverseMatrix[5]! * y +
+        inverseMatrix[9]! * z +
+        inverseMatrix[13]!) /
+        w,
+      (inverseMatrix[2]! * x +
+        inverseMatrix[6]! * y +
+        inverseMatrix[10]! * z +
+        inverseMatrix[14]!) /
+        w,
+    ];
+  };
+  const near = unproject(-1);
+  const far = unproject(1);
+  if (!near || !far) return undefined;
+  const ray: [number, number, number] = [
+    far[0] - near[0],
+    far[1] - near[1],
+    far[2] - near[2],
+  ];
+  if (Math.abs(ray[2]) < 1e-12) return undefined;
+  const t = -near[2] / ray[2];
+  if (!Number.isFinite(t) || t < 0) return undefined;
+  const travel: [number, number, number] = [ray[0] * t, ray[1] * t, ray[2] * t];
+  return {
+    point: [near[0] + travel[0], near[1] + travel[1], 0],
+    distance: Math.hypot(...travel),
+  };
 }
 
 function fillColors(theme: LowResTheme): RGB[] {
@@ -455,9 +700,9 @@ export class BaseLayer extends ScreenLayer {
     gl: WebGL2RenderingContext,
     shader: WebGLProgram,
     options: CustomRenderMethodInput,
-  ): void {
+  ): void | boolean {
     const frame = this.provider.frame();
-    if (!frame) return;
+    if (!frame) return false;
     const current = this.provider.viewState() ?? frame.state;
     setProjectionUniforms(gl, shader, frame, this.provider, options);
     const transform = reprojectionTransform(frame.state, current);
@@ -601,6 +846,7 @@ export class BaseLayer extends ScreenLayer {
 export class DataLayer extends ScreenLayer {
   #textures: WebGLTexture[] = [];
   #uploadedGeneration = -1;
+  #uploadedDataGeneration = -1;
 
   protected fragmentSource(): string {
     return DATA_FRAGMENT;
@@ -614,18 +860,32 @@ export class DataLayer extends ScreenLayer {
     gl: WebGL2RenderingContext,
     shader: WebGLProgram,
     options: CustomRenderMethodInput,
-  ): void {
+  ): void | boolean {
     const frame = this.provider.frame();
-    if (!frame) return;
-    const current = this.provider.viewState() ?? frame.state;
-    setProjectionUniforms(gl, shader, frame, this.provider, options);
-    const transform = reprojectionTransform(frame.state, current);
+    if (!frame) return false;
+    const dataFrame = this.provider.dataFrame();
+    const sourceFrame = dataFrame ?? frame;
+    const current = this.provider.viewState() ?? sourceFrame.state;
+    setProjectionUniforms(gl, shader, sourceFrame, this.provider, options);
+    const transform = reprojectionTransform(sourceFrame.state, current);
     if (frame.generation !== this.#uploadedGeneration) {
       this.#upload(gl, 0, frame.columns, frame.rows, frame.scalar);
-      this.#upload(gl, 1, frame.columns, frame.rows, frame.heatmap);
       this.#uploadedGeneration = frame.generation;
     }
-    for (const [index, name] of ["u_scalar", "u_heatmap"].entries()) {
+    if (dataFrame && dataFrame.generation !== this.#uploadedDataGeneration) {
+      this.#uploadRgba(
+        gl,
+        1,
+        dataFrame.dotColumns,
+        dataFrame.dotRows,
+        dataFrame.data,
+      );
+      this.#uploadedDataGeneration = dataFrame.generation;
+    } else if (!dataFrame && this.#uploadedDataGeneration !== 0) {
+      this.#uploadRgba(gl, 1, 1, 1, new Uint8Array(4));
+      this.#uploadedDataGeneration = 0;
+    }
+    for (const [index, name] of ["u_scalar", "u_overlay"].entries()) {
       gl.activeTexture(gl.TEXTURE0 + index);
       gl.bindTexture(gl.TEXTURE_2D, this.#textures[index]!);
       gl.uniform1i(gl.getUniformLocation(shader, name), index);
@@ -637,8 +897,8 @@ export class DataLayer extends ScreenLayer {
     );
     gl.uniform2f(
       gl.getUniformLocation(shader, "u_frame_view_size"),
-      frame.state.width,
-      frame.state.height,
+      sourceFrame.state.width,
+      sourceFrame.state.height,
     );
     gl.uniform1f(
       gl.getUniformLocation(shader, "u_pixel_ratio"),
@@ -656,29 +916,21 @@ export class DataLayer extends ScreenLayer {
     );
     gl.uniform2f(
       gl.getUniformLocation(shader, "u_cell_size"),
-      frame.state.cell.width,
-      frame.state.cell.height,
+      sourceFrame.state.cell.width,
+      sourceFrame.state.cell.height,
     );
     gl.uniform1f(
       gl.getUniformLocation(shader, "u_dot_size"),
-      frame.state.cell.dotSize,
+      sourceFrame.state.cell.dotSize,
     );
     gl.uniform2i(
       gl.getUniformLocation(shader, "u_grid_size"),
-      frame.columns,
-      frame.rows,
+      dataFrame ? Math.ceil(dataFrame.dotColumns / 2) : frame.columns,
+      dataFrame ? Math.ceil(dataFrame.dotRows / 4) : frame.rows,
     );
     gl.uniform3fv(
       gl.getUniformLocation(shader, "u_scalar_colors[0]"),
       normalized(this.provider.scalarPalette()),
-    );
-    gl.uniform3fv(
-      gl.getUniformLocation(shader, "u_heatmap_colors[0]"),
-      normalized(this.provider.heatmapPalette()),
-    );
-    gl.uniform1f(
-      gl.getUniformLocation(shader, "u_heatmap_opacity"),
-      this.provider.heatmapOpacity(),
     );
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -707,8 +959,118 @@ export class DataLayer extends ScreenLayer {
     );
   }
 
+  #uploadRgba(
+    gl: WebGL2RenderingContext,
+    index: number,
+    width: number,
+    height: number,
+    data: Uint8Array,
+  ): void {
+    gl.activeTexture(gl.TEXTURE0 + index);
+    gl.bindTexture(gl.TEXTURE_2D, this.#textures[index]!);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      data,
+    );
+  }
+
   protected release(gl: WebGL2RenderingContext): void {
     this.#textures.forEach((value) => gl.deleteTexture(value));
+  }
+}
+
+export class MarkerLayer extends ScreenLayer {
+  #texture: WebGLTexture | undefined;
+  #uploadedGeneration = -1;
+
+  protected fragmentSource(): string {
+    return MARKER_FRAGMENT;
+  }
+  protected allocate(gl: WebGL2RenderingContext): void {
+    this.#texture = texture(gl);
+  }
+  protected draw(
+    gl: WebGL2RenderingContext,
+    shader: WebGLProgram,
+    options: CustomRenderMethodInput,
+  ): void | boolean {
+    const frame = this.provider.frame();
+    const dataFrame = this.provider.dataFrame();
+    if (!frame || !dataFrame || !this.#texture) return false;
+    const current = this.provider.viewState() ?? dataFrame.state;
+    setProjectionUniforms(gl, shader, dataFrame, this.provider, options);
+    const transform = reprojectionTransform(dataFrame.state, current);
+    if (dataFrame.generation !== this.#uploadedGeneration) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.#texture);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        dataFrame.dotColumns,
+        dataFrame.dotRows,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        dataFrame.markers,
+      );
+      this.#uploadedGeneration = dataFrame.generation;
+    }
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.#texture);
+    gl.uniform1i(gl.getUniformLocation(shader, "u_overlay"), 0);
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_current_view_size"),
+      current.width,
+      current.height,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_frame_view_size"),
+      dataFrame.state.width,
+      dataFrame.state.height,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(shader, "u_pixel_ratio"),
+      current.pixelRatio,
+    );
+    gl.uniformMatrix2fv(
+      gl.getUniformLocation(shader, "u_reproject_matrix"),
+      false,
+      transform.matrix,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_reproject_offset"),
+      transform.offset[0],
+      transform.offset[1],
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_cell_size"),
+      dataFrame.state.cell.width,
+      dataFrame.state.cell.height,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(shader, "u_dot_size"),
+      dataFrame.state.cell.dotSize,
+    );
+    gl.uniform2i(
+      gl.getUniformLocation(shader, "u_grid_size"),
+      Math.ceil(dataFrame.dotColumns / 2),
+      Math.ceil(dataFrame.dotRows / 4),
+    );
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  }
+  protected release(gl: WebGL2RenderingContext): void {
+    if (this.#texture) gl.deleteTexture(this.#texture);
   }
 }
 
@@ -736,7 +1098,7 @@ export class LabelsLayer extends ScreenLayer {
     options: CustomRenderMethodInput,
   ): void | boolean {
     const frame = this.provider.frame();
-    if (!frame || !this.#texture || !this.#canvas) return;
+    if (!frame || !this.#texture || !this.#canvas) return false;
     const current = this.provider.viewState() ?? frame.state;
     setProjectionUniforms(gl, shader, frame, this.provider, options);
     const transform = reprojectionTransform(frame.state, current);
@@ -843,6 +1205,87 @@ export class LabelsLayer extends ScreenLayer {
   }
 }
 
+export class FogLayer extends ScreenLayer {
+  protected vertexSource(): string {
+    return FOG_VERTEX;
+  }
+
+  protected fragmentSource(): string {
+    return FOG_FRAGMENT;
+  }
+
+  protected allocate(_gl: WebGL2RenderingContext): void {}
+
+  protected draw(
+    gl: WebGL2RenderingContext,
+    shader: WebGLProgram,
+    options: CustomRenderMethodInput,
+  ): void | boolean {
+    const fog = this.provider.fog();
+    const frame = this.provider.frame();
+    const current = this.provider.viewState();
+    if (
+      !fog.visible ||
+      !frame ||
+      !current ||
+      current.pitch <= 0 ||
+      this.provider.projectionMode() !== "surface"
+    )
+      return false;
+
+    const inverse = invertMatrix4(options.defaultProjectionData.mainMatrix);
+    if (!inverse) return false;
+
+    const [centerX, centerY] = lngLatToWorld(
+      frame.state.center.lng,
+      frame.state.center.lat,
+    );
+    const worldSize = 512 * 2 ** frame.state.zoom;
+    const halfX = frame.state.width / (2 * worldSize);
+    const halfY = frame.state.height / (2 * worldSize);
+    gl.uniformMatrix4fv(
+      gl.getUniformLocation(shader, "u_inverse_map_matrix"),
+      false,
+      inverse,
+    );
+    gl.uniform4f(
+      gl.getUniformLocation(shader, "u_world_bounds"),
+      centerX - halfX,
+      centerY - halfY,
+      centerX + halfX,
+      centerY + halfY,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_view_size"),
+      current.width,
+      current.height,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(shader, "u_pixel_ratio"),
+      current.pixelRatio,
+    );
+    gl.uniform1f(gl.getUniformLocation(shader, "u_start"), fog.start);
+    gl.uniform1f(gl.getUniformLocation(shader, "u_end"), fog.end);
+    gl.uniform1f(gl.getUniformLocation(shader, "u_opacity"), fog.opacity);
+    gl.uniform1f(
+      gl.getUniformLocation(shader, "u_pitch_mix"),
+      smoothstep(0, 20, current.pitch),
+    );
+    gl.uniform3fv(
+      gl.getUniformLocation(shader, "u_color"),
+      normalized([fog.color]),
+    );
+    gl.uniform1i(
+      gl.getUniformLocation(shader, "u_dithered"),
+      fog.mode === "dithered" ? 1 : 0,
+    );
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  }
+
+  protected release(_gl: WebGL2RenderingContext): void {}
+}
+
 export interface BillboardGlyph {
   anchor: readonly [number, number];
   offset: readonly [number, number];
@@ -885,7 +1328,7 @@ export function billboardGlyphs(frame: RasterFrame): BillboardGlyph[] {
 function setProjectionUniforms(
   gl: WebGL2RenderingContext,
   shader: WebGLProgram,
-  frame: RasterFrame,
+  frame: Pick<RasterFrame, "state">,
   provider: FrameProvider,
   options: CustomRenderMethodInput,
 ): void {

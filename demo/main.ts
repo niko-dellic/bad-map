@@ -1,6 +1,12 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@phosphor-icons/web/regular";
-import { Map, Marker, NavigationControl } from "maplibre-gl";
+import { Map, NavigationControl } from "maplibre-gl";
+import type {
+  Feature,
+  FeatureCollection,
+  LineString,
+  MultiLineString,
+} from "geojson";
 import {
   landuse,
   LowResBasemap,
@@ -9,6 +15,9 @@ import {
   streets,
   topographic,
   transit,
+  type LowResDataFeature,
+  type LowResTrip,
+  type RGB,
 } from "../src";
 import "./style.css";
 
@@ -44,6 +53,15 @@ const BASE_SOURCE = {
 };
 const UBER_DATA_URL =
   "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/screen-grid/uber-pickup-locations.json";
+const HIGHWAY_ROADS_URL =
+  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/highway/roads.json";
+const HIGHWAY_ACCIDENTS_URL =
+  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/highway/accidents.csv";
+const TRIPS_DATA_URL =
+  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/trips/trips-v7.json";
+const SEARCH_WAYPOINT_LAYER = "demo-search-waypoint";
+const HIGHWAY_LAYER = "demo-highway-safety";
+const TRIPS_LAYER = "demo-nyc-trips";
 const NATIVE_HEATMAP_SOURCE = "demo-uber-pickups";
 const NATIVE_HEATMAP_LAYER = "demo-uber-native-heatmap";
 const packDescriptors = [
@@ -58,14 +76,16 @@ const basemap = new LowResBasemap({
   source: BASE_SOURCE,
   layers: packDescriptors,
   colorMode: "greyscale",
+  labels: false,
   featureInteraction: false,
-  camera: { rotation: true, pitch: false, maxPitch: 70 },
+  camera: { rotation: true, pitch: true, maxPitch: 70 },
 });
 const status = document.querySelector<HTMLSpanElement>("#status")!;
 const readout = document.querySelector<HTMLElement>("#readout")!;
 const featureQueryToggle = document.querySelector<HTMLButtonElement>(
   "#feature-query-toggle",
 )!;
+const fogToggle = document.querySelector<HTMLButtonElement>("#fog-toggle")!;
 const settings = document.querySelector<HTMLElement>("#settings")!;
 const settingsToggle =
   document.querySelector<HTMLButtonElement>("#settings-toggle")!;
@@ -163,6 +183,7 @@ const diagnostics = {
   lastDurationMs: 0,
   generations: [] as number[],
   heatmapEvents: 0,
+  dataRenderEvents: 0,
   featureEnterEvents: 0,
 };
 
@@ -220,7 +241,6 @@ let placeSearchRequest: AbortController | undefined;
 let placeSearchRequestId = 0;
 let placeSearchMatches: PhotonFeature[] = [];
 let activePlaceIndex = -1;
-let placeMarker: Marker | undefined;
 
 const placeName = (feature: PhotonFeature) =>
   feature.properties.name ||
@@ -290,10 +310,21 @@ const selectPlace = (feature: PhotonFeature) => {
   placeSearchStatus.textContent = placeDetail(feature) || "place selected";
   setPlaceSearchExpanded(false);
   placeSearchToggle.focus();
-  placeMarker?.remove();
-  placeMarker = new Marker({ color: "#ff6688" })
-    .setLngLat([longitude, latitude])
-    .addTo(map);
+  basemap.setDataLayer({
+    id: SEARCH_WAYPOINT_LAYER,
+    type: "waypoint",
+    order: 1000,
+    pickable: false,
+    data: [
+      {
+        ...(feature.properties.osm_id === undefined
+          ? {}
+          : { id: feature.properties.osm_id }),
+        position: [longitude, latitude],
+        properties: { name: placeName(feature) },
+      },
+    ],
+  });
   map.flyTo({
     center: [longitude, latitude],
     zoom: zoomForPlace(feature.properties.type),
@@ -423,8 +454,7 @@ placeSearchInput.onfocus = () => {
 };
 placeSearchClear.onclick = () => {
   placeSearchInput.value = "";
-  placeMarker?.remove();
-  placeMarker = undefined;
+  basemap.removeDataLayer(SEARCH_WAYPOINT_LAYER);
   schedulePlaceSearch();
   setPlaceSearchExpanded(false);
   placeSearchToggle.focus();
@@ -447,6 +477,9 @@ basemap.on("stylechange", () => {
 basemap.on("heatmapchange", () => {
   diagnostics.heatmapEvents += 1;
 });
+basemap.on("datarender", () => {
+  diagnostics.dataRenderEvents += 1;
+});
 basemap.on("error", ({ error }) => {
   status.textContent = error.message;
 });
@@ -456,9 +489,20 @@ basemap.on("featureenter", ({ feature }) => {
   readout.textContent = `${title} · ${feature.packId}/${feature.sourceLayer}`;
 });
 basemap.on("featureleave", () => {
-  readout.textContent = basemap.getFeatureInteractionEnabled()
-    ? "Move over the map to inspect a feature."
-    : "Mouse feature queries are off.";
+  readout.textContent = "Move over the map to inspect a feature.";
+});
+const describeDataFeature = (feature: LowResDataFeature) => {
+  if (feature.layerId === HIGHWAY_LAYER) {
+    const properties = feature.properties ?? {};
+    return `${properties.name ?? `${properties.type ?? "road"}-${properties.id ?? ""}`} · ${properties.state ?? ""} · ${properties.incidents ?? 0} crashes · ${properties.fatalities ?? 0} fatalities`;
+  }
+  return `${String(feature.properties?.name ?? feature.featureId ?? feature.layerType)} · ${feature.layerId}`;
+};
+basemap.on("datafeatureenter", ({ feature }) => {
+  readout.textContent = describeDataFeature(feature);
+});
+basemap.on("datafeatureleave", () => {
+  readout.textContent = "Move over the map to inspect a feature.";
 });
 
 featureQueryToggle.onclick = () => {
@@ -471,9 +515,8 @@ featureQueryToggle.onclick = () => {
   featureQueryToggle.setAttribute("aria-label", label);
   featureQueryToggle.title = label;
   document.querySelector("#map")!.classList.toggle("is-querying", enabled);
-  readout.textContent = enabled
-    ? "Move over the map to inspect a feature."
-    : "Mouse feature queries are off.";
+  readout.hidden = !enabled;
+  readout.textContent = "Move over the map to inspect a feature.";
 };
 
 try {
@@ -532,9 +575,80 @@ const locale = document.querySelector<HTMLSelectElement>("#locale")!;
 locale.onchange = () => basemap.setLocale(locale.value);
 
 const projection = document.querySelector<HTMLSelectElement>("#projection")!;
+const fogMode = document.querySelector<HTMLSelectElement>("#fog-mode")!;
+const fogStart = document.querySelector<HTMLInputElement>("#fog-start")!;
+const fogEnd = document.querySelector<HTMLInputElement>("#fog-end")!;
+const fogColor = document.querySelector<HTMLInputElement>("#fog-color")!;
+const fogThemeColor =
+  document.querySelector<HTMLInputElement>("#fog-theme-color")!;
+const fogStatus = document.querySelector<HTMLOutputElement>("#fog-status")!;
 const buildings3D = document.querySelector<HTMLInputElement>("#buildings-3d")!;
 const bearing = document.querySelector<HTMLInputElement>("#bearing")!;
 const pitch = document.querySelector<HTMLInputElement>("#pitch")!;
+let themeFogColor: RGB = [15, 15, 15];
+const rgbToHex = (color: RGB) =>
+  `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+const hexToRgb = (color: string): RGB => [
+  Number.parseInt(color.slice(1, 3), 16),
+  Number.parseInt(color.slice(3, 5), 16),
+  Number.parseInt(color.slice(5, 7), 16),
+];
+const syncFogControls = () => {
+  const fog = basemap.getFogOptions();
+  const surface = projection.value === "surface";
+  fogMode.value = fog.visible ? fog.mode : "disabled";
+  fogStart.value = String(fog.start);
+  fogEnd.value = String(fog.end);
+  document.querySelector("#fog-start-value")!.textContent =
+    fog.start.toFixed(2);
+  document.querySelector("#fog-end-value")!.textContent = fog.end.toFixed(2);
+  fogThemeColor.checked = fog.color === undefined;
+  fogColor.value = rgbToHex(fog.color ?? themeFogColor);
+  fogToggle.disabled = !surface;
+  fogToggle.setAttribute("aria-pressed", String(fog.visible));
+  const label = surface
+    ? `${fog.visible ? "Disable" : "Enable"} ${fog.mode} fog`
+    : "Fog is available in 3D surface mode";
+  fogToggle.setAttribute("aria-label", label);
+  fogToggle.title = label;
+  fogStatus.textContent = !surface
+    ? "available in 3D surface mode"
+    : fog.visible
+      ? `${fog.mode} · ${Math.round(fog.start * 100)}–${Math.round(fog.end * 100)}% viewport depth · ${fog.color ? fogColor.value : "theme color"}`
+      : "fog disabled";
+};
+fogToggle.onclick = () => {
+  basemap.setFogVisible(!basemap.getFogOptions().visible);
+};
+fogMode.onchange = () => {
+  if (fogMode.value === "disabled") basemap.setFogVisible(false);
+  else
+    basemap.setFog({
+      visible: true,
+      mode: fogMode.value === "dithered" ? "dithered" : "regular",
+    });
+};
+fogStart.oninput = () => {
+  const start = Math.min(Number(fogStart.value), Number(fogEnd.value) - 0.01);
+  basemap.setFog({ start: Math.max(0, start) });
+};
+fogEnd.oninput = () => {
+  const end = Math.max(Number(fogEnd.value), Number(fogStart.value) + 0.01);
+  basemap.setFog({ end: Math.min(1, end) });
+};
+fogColor.oninput = () => basemap.setFog({ color: hexToRgb(fogColor.value) });
+fogThemeColor.onchange = () =>
+  basemap.setFog({
+    color: fogThemeColor.checked ? undefined : hexToRgb(fogColor.value),
+  });
+basemap.on("fogchange", ({ color }) => {
+  if (basemap.getFogOptions().color === undefined) themeFogColor = color;
+  syncFogControls();
+});
+basemap.on("stylechange", ({ theme }) => {
+  themeFogColor = theme.fills.ground;
+  syncFogControls();
+});
 const updateCameraLabels = () => {
   document.querySelector("#bearing-value")!.textContent =
     `${Math.round(map.getBearing())}°`;
@@ -553,14 +667,12 @@ const applyProjection = () => {
     pitch: surface,
     maxPitch: 70,
   });
+  syncFogControls();
   map.easeTo({ pitch: surface ? Number(pitch.value) || 45 : 0, duration: 450 });
 };
+syncFogControls();
 projection.onchange = applyProjection;
 buildings3D.onchange = () => {
-  if (buildings3D.checked && projection.value !== "surface") {
-    projection.value = "surface";
-    applyProjection();
-  }
   basemap.setBuildings3DVisible(buildings3D.checked);
 };
 bearing.oninput = () => map.setBearing(Number(bearing.value));
@@ -765,6 +877,435 @@ heatmapMode.onchange = () => void applyHeatmapMode();
 heatmapRadius.oninput = applyHeatmapControls;
 heatmapIntensity.oninput = applyHeatmapControls;
 heatmapOpacity.oninput = applyHeatmapControls;
+
+interface HighwayProperties {
+  state: string;
+  type: string;
+  id: string;
+  name: string;
+  length: number;
+  incidents?: number;
+  fatalities?: number;
+}
+type HighwayFeature = Feature<LineString | MultiLineString, HighwayProperties>;
+interface HighwayData {
+  roads: FeatureCollection<LineString | MultiLineString, HighwayProperties>;
+  accidents: globalThis.Map<string, { incidents: number; fatalities: number }>;
+}
+
+const highwayMode = document.querySelector<HTMLSelectElement>("#highway-mode")!;
+const highwayYear = document.querySelector<HTMLSelectElement>("#highway-year")!;
+const highwayColor =
+  document.querySelector<HTMLSelectElement>("#highway-color")!;
+const highwayWidth =
+  document.querySelector<HTMLSelectElement>("#highway-width")!;
+const highwayOpacity =
+  document.querySelector<HTMLInputElement>("#highway-opacity")!;
+const highwayStatus =
+  document.querySelector<HTMLOutputElement>("#highway-status")!;
+let highwayDataPromise: Promise<HighwayData> | undefined;
+let highwayFocused = false;
+
+const highwayKey = (
+  properties: Pick<HighwayProperties, "state" | "type" | "id">,
+) => `${properties.state}-${properties.type}-${properties.id}`;
+
+const loadHighwayData = () => {
+  highwayDataPromise ??= Promise.all([
+    fetch(HIGHWAY_ROADS_URL).then((response) => {
+      if (!response.ok)
+        throw new Error(`Road request failed (${response.status})`);
+      return response.json() as Promise<
+        FeatureCollection<LineString | MultiLineString, HighwayProperties>
+      >;
+    }),
+    fetch(HIGHWAY_ACCIDENTS_URL).then(async (response) => {
+      if (!response.ok)
+        throw new Error(`Accident request failed (${response.status})`);
+      return response.text();
+    }),
+  ]).then(([roads, csv]) => {
+    const accidents = new globalThis.Map<
+      string,
+      { incidents: number; fatalities: number }
+    >();
+    for (const row of csv.trim().split(/\r?\n/).slice(1)) {
+      const [state, type, id, year, incidents, fatalities] = row.split(",");
+      if (!state || !type || !id || !year) continue;
+      accidents.set(`${year}:${state}-${type}-${id}`, {
+        incidents: Number(incidents) || 0,
+        fatalities: Number(fatalities) || 0,
+      });
+    }
+    return { roads, accidents };
+  });
+  return highwayDataPromise;
+};
+
+const SAFETY_COLORS = [
+  [26, 152, 80],
+  [102, 189, 99],
+  [166, 217, 106],
+  [217, 239, 139],
+  [255, 255, 191],
+  [254, 224, 139],
+  [253, 174, 97],
+  [244, 109, 67],
+  [215, 48, 39],
+  [168, 0, 0],
+] as const;
+const SAFETY_THRESHOLDS = [0, 4, 8, 12, 20, 32, 52, 84, 136, 220];
+const safetyRate = (
+  feature: HighwayFeature,
+  metric: "incidents" | "fatalities",
+) =>
+  ((Number(feature.properties[metric]) || 0) /
+    Math.max(0.001, Number(feature.properties.length) || 0.001)) *
+  1000;
+const safetyColor = (value: number) => {
+  let index = 0;
+  while (
+    index + 1 < SAFETY_THRESHOLDS.length &&
+    value >= SAFETY_THRESHOLDS[index + 1]!
+  )
+    index += 1;
+  return SAFETY_COLORS[index]!;
+};
+
+const applyHighwayLayer = async () => {
+  if (highwayMode.value === "off") {
+    basemap.removeDataLayer(HIGHWAY_LAYER);
+    highwayStatus.textContent = highwayDataPromise
+      ? "highway data ready"
+      : "loads nationwide roads on selection";
+    return;
+  }
+  highwayMode.disabled = true;
+  highwayStatus.textContent = "loading highway data…";
+  try {
+    const data = await loadHighwayData();
+    const year = Number(highwayYear.value);
+    const roads: FeatureCollection<
+      LineString | MultiLineString,
+      HighwayProperties
+    > = {
+      type: "FeatureCollection",
+      features: data.roads.features.map((feature) => {
+        const totals = data.accidents.get(
+          `${year}:${highwayKey(feature.properties)}`,
+        );
+        return {
+          ...feature,
+          id: highwayKey(feature.properties),
+          properties: {
+            ...feature.properties,
+            incidents: totals?.incidents ?? 0,
+            fatalities: totals?.fatalities ?? 0,
+          },
+        };
+      }),
+    };
+    const colorMetric = highwayColor.value;
+    const widthMetric = highwayWidth.value;
+    basemap.setDataLayer({
+      id: HIGHWAY_LAYER,
+      type: "geojson",
+      data: roads,
+      opacity: Number(highwayOpacity.value),
+      order: 20,
+      pickable: true,
+      line: {
+        color: (feature) =>
+          colorMetric === "fixed"
+            ? [255, 190, 80]
+            : safetyColor(
+                safetyRate(
+                  feature as HighwayFeature,
+                  colorMetric as "incidents" | "fatalities",
+                ),
+              ),
+        width: (feature) =>
+          widthMetric === "fixed"
+            ? 4
+            : Math.min(
+                4,
+                1 +
+                  Math.floor(
+                    safetyRate(
+                      feature as HighwayFeature,
+                      widthMetric as "incidents" | "fatalities",
+                    ) / 50,
+                  ),
+              ) * 4,
+      },
+    });
+    if (!basemap.getFeatureInteractionEnabled()) featureQueryToggle.click();
+    if (!highwayFocused) {
+      highwayFocused = true;
+      map.easeTo({ center: [-100, 38], zoom: 4, pitch: 0, duration: 700 });
+    }
+    highwayStatus.textContent = `${roads.features.length.toLocaleString()} roads · ${year}`;
+  } catch (error) {
+    highwayMode.value = "off";
+    highwayStatus.textContent =
+      error instanceof Error ? error.message : String(error);
+  } finally {
+    highwayMode.disabled = false;
+  }
+};
+
+highwayMode.onchange = () => void applyHighwayLayer();
+highwayYear.onchange = () => void applyHighwayLayer();
+highwayColor.onchange = () => void applyHighwayLayer();
+highwayWidth.onchange = () => void applyHighwayLayer();
+highwayOpacity.oninput = () => {
+  document.querySelector("#highway-opacity-value")!.textContent = Number(
+    highwayOpacity.value,
+  ).toFixed(2);
+  if (highwayMode.value !== "off")
+    basemap.updateDataLayer(HIGHWAY_LAYER, {
+      opacity: Number(highwayOpacity.value),
+    });
+};
+
+const tripsMode = document.querySelector<HTMLSelectElement>("#trips-mode")!;
+const tripsPlay = document.querySelector<HTMLButtonElement>("#trips-play")!;
+const tripsPlayIcon = tripsPlay.querySelector<HTMLElement>("i")!;
+const tripsStepBack =
+  document.querySelector<HTMLButtonElement>("#trips-step-back")!;
+const tripsStepForward = document.querySelector<HTMLButtonElement>(
+  "#trips-step-forward",
+)!;
+const tripsTime = document.querySelector<HTMLInputElement>("#trips-time")!;
+const tripsTimeValue =
+  document.querySelector<HTMLOutputElement>("#trips-time-value")!;
+const tripsSpeed = document.querySelector<HTMLInputElement>("#trips-speed")!;
+const tripsTrail = document.querySelector<HTMLInputElement>("#trips-trail")!;
+const tripsWidth = document.querySelector<HTMLInputElement>("#trips-width")!;
+const tripsOpacity =
+  document.querySelector<HTMLInputElement>("#trips-opacity")!;
+const tripsStatus = document.querySelector<HTMLOutputElement>("#trips-status")!;
+let tripsDataPromise: Promise<LowResTrip[]> | undefined;
+let tripsFocused = false;
+let tripsScrubbing = false;
+let tripsResumeAfterScrub = false;
+const TRIPS_STEP = 15;
+
+const formatTripsTime = (currentTime: number, loopLength = 1800) =>
+  `${Math.round(currentTime)} / ${Math.round(loopLength)}`;
+
+const syncTripsTime = (currentTime: number, loopLength = 1800) => {
+  tripsTime.value = String(Math.round(currentTime));
+  tripsTimeValue.textContent = formatTripsTime(currentTime, loopLength);
+};
+
+const syncTripsPlayButton = (playing: boolean) => {
+  const action = playing ? "Pause" : "Play";
+  tripsPlay.setAttribute("aria-label", `${action} trips`);
+  tripsPlay.setAttribute("aria-pressed", String(playing));
+  tripsPlay.title = `${action} trips`;
+  tripsPlayIcon.className = `ph ph-${playing ? "pause" : "play"}`;
+};
+
+const setTripsTransportEnabled = (enabled: boolean) => {
+  tripsPlay.disabled = !enabled;
+  tripsStepBack.disabled = !enabled;
+  tripsStepForward.disabled = !enabled;
+  tripsTime.disabled = !enabled;
+};
+
+const loadTrips = () => {
+  tripsDataPromise ??= fetch(TRIPS_DATA_URL)
+    .then((response) => {
+      if (!response.ok)
+        throw new Error(`Trips request failed (${response.status})`);
+      return response.json() as Promise<unknown>;
+    })
+    .then((value) => {
+      if (!Array.isArray(value)) throw new TypeError("Unexpected trips data");
+      const trips: LowResTrip[] = [];
+      for (const [index, candidate] of value.entries()) {
+        if (!candidate || typeof candidate !== "object") continue;
+        const source = candidate as {
+          vendor?: number;
+          path?: [number, number][];
+          timestamps?: number[];
+        };
+        if (!Array.isArray(source.path) || !Array.isArray(source.timestamps))
+          continue;
+        trips.push({
+          id: index,
+          path: source.path,
+          timestamps: source.timestamps,
+          color: source.vendor === 0 ? [253, 128, 93] : [23, 184, 190],
+          properties: { vendor: source.vendor ?? -1 },
+        });
+      }
+      return trips;
+    });
+  return tripsDataPromise;
+};
+
+const syncTripsOutputs = () => {
+  document.querySelector("#trips-speed-value")!.textContent =
+    `${Number(tripsSpeed.value)}×`;
+  document.querySelector("#trips-trail-value")!.textContent = tripsTrail.value;
+  document.querySelector("#trips-width-value")!.textContent = tripsWidth.value;
+  document.querySelector("#trips-opacity-value")!.textContent = Number(
+    tripsOpacity.value,
+  ).toFixed(2);
+};
+
+const applyTripsMode = async ({ focus = true }: { focus?: boolean } = {}) => {
+  if (tripsMode.value === "off") {
+    basemap.removeDataLayer(TRIPS_LAYER);
+    setTripsTransportEnabled(false);
+    syncTripsPlayButton(false);
+    tripsStatus.textContent = tripsDataPromise
+      ? "trip data ready"
+      : "loads NYC trips on selection";
+    return;
+  }
+  tripsMode.disabled = true;
+  tripsStatus.textContent = "loading trip data…";
+  try {
+    const trips = await loadTrips();
+    basemap.setDataLayer({
+      id: TRIPS_LAYER,
+      type: "trips",
+      data: trips,
+      currentTime: Number(tripsTime.value),
+      loopLength: 1800,
+      trailLength: Number(tripsTrail.value),
+      speed: Number(tripsSpeed.value),
+      width: Number(tripsWidth.value),
+      opacity: Number(tripsOpacity.value),
+      playing: true,
+      order: 40,
+      pickable: true,
+    });
+    setTripsTransportEnabled(true);
+    syncTripsPlayButton(true);
+    syncTripsTime(Number(tripsTime.value), 1800);
+    if (focus && !tripsFocused) {
+      tripsFocused = true;
+      map.easeTo({ center: [-74, 40.72], zoom: 13, duration: 700 });
+    }
+    tripsStatus.textContent = `${trips.length.toLocaleString()} animated trips`;
+    syncTripsOutputs();
+  } catch (error) {
+    tripsMode.value = "off";
+    tripsStatus.textContent =
+      error instanceof Error ? error.message : String(error);
+  } finally {
+    tripsMode.disabled = false;
+  }
+};
+
+tripsMode.onchange = () => void applyTripsMode();
+tripsPlay.onclick = () => {
+  const playback = basemap.getTripsPlayback(TRIPS_LAYER);
+  basemap.setTripsPlayback(TRIPS_LAYER, { playing: !playback.playing });
+  syncTripsPlayButton(!playback.playing);
+};
+const stepTrips = (delta: number) => {
+  basemap.stepTripsPlayback(TRIPS_LAYER, delta, { playing: false });
+  const playback = basemap.getTripsPlayback(TRIPS_LAYER);
+  syncTripsTime(playback.currentTime, playback.loopLength);
+  syncTripsPlayButton(false);
+};
+tripsStepBack.onclick = () => stepTrips(-TRIPS_STEP);
+tripsStepForward.onclick = () => stepTrips(TRIPS_STEP);
+
+tripsTime.onpointerdown = () => {
+  if (tripsMode.value === "off") return;
+  const playback = basemap.getTripsPlayback(TRIPS_LAYER);
+  tripsScrubbing = true;
+  tripsResumeAfterScrub = playback.playing;
+  if (playback.playing)
+    basemap.setTripsPlayback(TRIPS_LAYER, { playing: false });
+  syncTripsPlayButton(false);
+};
+tripsTime.oninput = () => {
+  if (tripsMode.value === "off") return;
+  const time = Number(tripsTime.value);
+  basemap.seekTripsPlayback(TRIPS_LAYER, time, { playing: false });
+  syncTripsTime(time);
+  syncTripsPlayButton(false);
+};
+const finishTripsScrub = () => {
+  if (!tripsScrubbing) return;
+  tripsScrubbing = false;
+  if (tripsResumeAfterScrub)
+    basemap.setTripsPlayback(TRIPS_LAYER, { playing: true });
+  syncTripsPlayButton(tripsResumeAfterScrub);
+  tripsResumeAfterScrub = false;
+};
+window.addEventListener("pointerup", finishTripsScrub);
+window.addEventListener("pointercancel", finishTripsScrub);
+tripsTime.onkeydown = (event) => {
+  if (tripsMode.value === "off") return;
+  const multiplier = event.shiftKey ? 4 : 1;
+  if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+    event.preventDefault();
+    stepTrips(-TRIPS_STEP * multiplier);
+  } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+    event.preventDefault();
+    stepTrips(TRIPS_STEP * multiplier);
+  } else if (event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    const playback = basemap.getTripsPlayback(TRIPS_LAYER);
+    basemap.seekTripsPlayback(
+      TRIPS_LAYER,
+      event.key === "Home" ? 0 : playback.loopLength,
+      { playing: false },
+    );
+    syncTripsTime(
+      event.key === "Home" ? 0 : playback.loopLength,
+      playback.loopLength,
+    );
+    syncTripsPlayButton(false);
+  } else if (event.key === " ") {
+    event.preventDefault();
+    tripsPlay.click();
+  }
+};
+tripsSpeed.oninput = () => {
+  syncTripsOutputs();
+  if (tripsMode.value !== "off")
+    basemap.setTripsPlayback(TRIPS_LAYER, { speed: Number(tripsSpeed.value) });
+};
+tripsTrail.oninput = () => {
+  syncTripsOutputs();
+  if (tripsMode.value !== "off")
+    basemap.setTripsPlayback(TRIPS_LAYER, {
+      trailLength: Number(tripsTrail.value),
+    });
+};
+const applyTripStyle = () => {
+  syncTripsOutputs();
+  if (tripsMode.value !== "off")
+    basemap.updateDataLayer(TRIPS_LAYER, {
+      width: Number(tripsWidth.value),
+      opacity: Number(tripsOpacity.value),
+    });
+};
+tripsWidth.oninput = applyTripStyle;
+tripsOpacity.oninput = applyTripStyle;
+
+const updateTripsClock = () => {
+  if (tripsMode.value !== "off") {
+    const playback = basemap.getTripsPlayback(TRIPS_LAYER);
+    if (playback.playing && !tripsScrubbing)
+      syncTripsTime(playback.currentTime, playback.loopLength);
+  }
+  requestAnimationFrame(updateTripsClock);
+};
+requestAnimationFrame(updateTripsClock);
+
+// The trips example is the demo's initial data view. Loading it here preserves
+// the same control path used when visitors turn the layer back on later.
+void applyTripsMode({ focus: false });
 
 document.querySelector<HTMLButtonElement>("#apply-sources")!.onclick = () => {
   const baseUrl =

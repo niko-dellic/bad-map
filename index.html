@@ -32,6 +32,16 @@
         >
           <i class="ph ph-cursor-click" aria-hidden="true"></i>
         </button>
+        <button
+          id="fog-toggle"
+          class="icon-button"
+          type="button"
+          aria-label="Enable dithered fog"
+          aria-pressed="false"
+          title="Enable dithered fog"
+        >
+          <i class="ph ph-cloud-fog" aria-hidden="true"></i>
+        </button>
         <div
           id="place-search"
           class="is-collapsed"
@@ -92,8 +102,8 @@
           </div>
         </div>
       </div>
-      <div id="readout" role="status" aria-live="polite">
-        Mouse feature queries are off.
+      <div id="readout" role="status" aria-live="polite" hidden>
+        Move over the map to inspect a feature.
       </div>
       <aside id="settings" aria-label="Map settings">
         <div
@@ -209,6 +219,53 @@
             </section>
 
             <section>
+              <h2>Atmosphere</h2>
+              <label
+                >Fog style
+                <select id="fog-mode">
+                  <option value="disabled" selected>disabled</option>
+                  <option value="dithered">dithered</option>
+                  <option value="regular">regular</option>
+                </select></label
+              >
+              <label
+                >Fog start <output id="fog-start-value">0.55</output
+                ><input
+                  id="fog-start"
+                  type="range"
+                  min="0"
+                  max="0.99"
+                  step="0.01"
+                  value="0.55"
+              /></label>
+              <label
+                >Fog end <output id="fog-end-value">0.95</output
+                ><input
+                  id="fog-end"
+                  type="range"
+                  min="0.01"
+                  max="1"
+                  step="0.01"
+                  value="0.95"
+              /></label>
+              <label for="fog-color"
+                >Fog color
+                <input
+                  id="fog-color"
+                  type="color"
+                  value="#0f0f0f"
+                  aria-label="Fog color"
+              /></label>
+              <label class="check"
+                ><input id="fog-theme-color" type="checkbox" checked /> Follow
+                theme</label
+              >
+              <output id="fog-status" class="section-status" aria-live="polite"
+                >fog disabled</output
+              >
+            </section>
+
+            <section>
               <h2>Cell lattice</h2>
               <label
                 >Width <output id="cell-width-value">8</output
@@ -249,7 +306,7 @@
                 >Projection
                 <select id="projection">
                   <option value="screen">screen lattice</option>
-                  <option value="surface">3D surface</option>
+                  <option value="surface" selected>3D surface</option>
                 </select></label
               >
               <label
@@ -271,7 +328,6 @@
                   max="70"
                   step="1"
                   value="0"
-                  disabled
               /></label>
             </section>
 
@@ -298,9 +354,7 @@
             <section>
               <h2>Map layers</h2>
               <div id="packs" class="checks">
-                <label
-                  ><input id="labels" type="checkbox" checked /> labels</label
-                >
+                <label><input id="labels" type="checkbox" /> labels</label>
                 <label
                   ><input id="buildings-3d" type="checkbox" /> 3D
                   buildings</label
@@ -361,6 +415,171 @@
                 class="section-status"
                 aria-live="polite"
                 >loads 100,000 NYC pickups on selection</output
+              >
+            </section>
+
+            <section>
+              <h2>US highway safety</h2>
+              <label
+                >Layer
+                <select id="highway-mode">
+                  <option value="off">off</option>
+                  <option value="lowres">low-resolution paths</option>
+                </select></label
+              >
+              <label
+                >Year
+                <select id="highway-year">
+                  <option>1990</option>
+                  <option>1995</option>
+                  <option>2000</option>
+                  <option>2005</option>
+                  <option>2010</option>
+                  <option selected>2015</option>
+                </select></label
+              >
+              <label
+                >Color
+                <select id="highway-color">
+                  <option value="fatalities" selected>
+                    fatalities / distance
+                  </option>
+                  <option value="incidents">crashes / distance</option>
+                  <option value="fixed">fixed color</option>
+                </select></label
+              >
+              <label
+                >Width
+                <select id="highway-width">
+                  <option value="incidents" selected>crashes / distance</option>
+                  <option value="fatalities">fatalities / distance</option>
+                  <option value="fixed">fixed width</option>
+                </select></label
+              >
+              <label
+                >Opacity <output id="highway-opacity-value">0.86</output
+                ><input
+                  id="highway-opacity"
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.01"
+                  value="0.86"
+              /></label>
+              <output
+                id="highway-status"
+                class="section-status"
+                aria-live="polite"
+                >loads nationwide roads on selection</output
+              >
+            </section>
+
+            <section>
+              <h2>NYC animated trips</h2>
+              <label
+                >Layer
+                <select id="trips-mode">
+                  <option value="off">off</option>
+                  <option value="lowres" selected>low-resolution trails</option>
+                </select></label
+              >
+              <div
+                class="trips-transport"
+                role="group"
+                aria-label="Trips playback"
+              >
+                <div class="trips-transport-controls">
+                  <button
+                    id="trips-step-back"
+                    class="icon-button"
+                    type="button"
+                    aria-label="Step backward 15 units"
+                    title="Step backward 15 units"
+                    disabled
+                  >
+                    <i class="ph ph-skip-back" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    id="trips-play"
+                    class="icon-button trips-play"
+                    type="button"
+                    aria-label="Play trips"
+                    title="Play trips"
+                    aria-pressed="false"
+                    disabled
+                  >
+                    <i class="ph ph-play" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    id="trips-step-forward"
+                    class="icon-button"
+                    type="button"
+                    aria-label="Step forward 15 units"
+                    title="Step forward 15 units"
+                    disabled
+                  >
+                    <i class="ph ph-skip-forward" aria-hidden="true"></i>
+                  </button>
+                  <output id="trips-time-value" for="trips-time"
+                    >0 / 1800</output
+                  >
+                </div>
+                <input
+                  id="trips-time"
+                  type="range"
+                  min="0"
+                  max="1800"
+                  step="1"
+                  value="0"
+                  aria-label="Trip timeline"
+                  disabled
+                />
+              </div>
+              <label
+                >Speed <output id="trips-speed-value">1×</output
+                ><input
+                  id="trips-speed"
+                  type="range"
+                  min="0.25"
+                  max="4"
+                  step="0.25"
+                  value="1"
+              /></label>
+              <label
+                >Trail <output id="trips-trail-value">180</output
+                ><input
+                  id="trips-trail"
+                  type="range"
+                  min="30"
+                  max="600"
+                  step="10"
+                  value="180"
+              /></label>
+              <label
+                >Width <output id="trips-width-value">2</output
+                ><input
+                  id="trips-width"
+                  type="range"
+                  min="1"
+                  max="8"
+                  step="0.5"
+                  value="2"
+              /></label>
+              <label
+                >Opacity <output id="trips-opacity-value">0.60</output
+                ><input
+                  id="trips-opacity"
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.05"
+                  value="0.6"
+              /></label>
+              <output
+                id="trips-status"
+                class="section-status"
+                aria-live="polite"
+                >loads NYC trips on selection</output
               >
             </section>
           </div>

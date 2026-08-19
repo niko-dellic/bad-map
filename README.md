@@ -42,7 +42,7 @@ basemap.setLayerVisible("transit", true);
 
 ## Layer ordering
 
-Six stable IDs divide the render stack:
+Seven stable IDs divide the render stack:
 
 ```ts
 basemap.layerIds.base; // fills and low-resolution linework
@@ -50,6 +50,7 @@ basemap.layerIds.buildings; // optional native 3D building extrusions
 basemap.layerIds.data; // low-resolution data compositor
 basemap.layerIds.markers; // marker boundary
 basemap.layerIds.labels; // package labels
+basemap.layerIds.fog; // atmospheric fog over all map content
 basemap.layerIds.interaction; // top interaction boundary
 ```
 
@@ -100,7 +101,7 @@ topographic factories provide defaults that can be overridden through their
 `numeric` option. Sources currently need MVT data, with OpenMapTiles property
 conventions for the built-in adapters.
 
-## Heatmaps
+## Pixelated data layers
 
 The demo compares two renderers using 100,000 weighted NYC Uber pickup
 locations from the public
@@ -113,10 +114,10 @@ smooth and remains outside package theme and greyscale changes:
 map.addLayer(nativeHeatmapLayer, basemap.layerIds.markers);
 ```
 
-The built-in low-resolution heatmap is the first density channel in the
-transparent `bad-map-data` compositor. This dedicated pass is the extension
-point for future raster, classified, contour, and other low-resolution data
-textures; they remain separate from fill, road, and label styling.
+Package-owned visualizations use an ID-based registry and a dedicated data
+worker. Heatmaps, GeoJSON, and animated trips render through `bad-map-data`;
+waypoints render through `bad-map-markers`. Both passes sit below labels and
+retain their palettes when the basemap switches to greyscale.
 
 The heatmap accepts compact
 `[longitude, latitude, weight]` triplets. Density is accumulated in the worker,
@@ -145,30 +146,92 @@ is preferable for comparisons and animated data because it prevents the color
 domain from changing while panning. Custom palettes remain unchanged when the
 basemap switches between color and greyscale. Use `setHeatmapData()`,
 `setHeatmapVisible()`, or
-`clearHeatmap()` for runtime updates.
+`clearHeatmap()` for runtime updates. These compatibility methods operate
+through the same registry.
+
+New applications can create multiple data layers directly:
+
+```ts
+basemap.setDataLayer({
+  id: "route",
+  type: "geojson",
+  data: routeGeoJSON,
+  order: 20,
+  pickable: true,
+  line: {
+    color: (feature) =>
+      feature.properties?.closed ? [230, 76, 91] : [87, 173, 133],
+    width: 3,
+  },
+  fill: { color: [87, 173, 133], opacity: 0.35 },
+});
+
+basemap.setDataLayer({
+  id: "destination",
+  type: "waypoint",
+  order: 100,
+  data: [{ id: "office", position: [-74.006, 40.7128] }],
+});
+```
+
+GeoJSON supports points, lines, polygons, their multi-geometry variants, and
+GeometryCollection data. Point, line, fill, and outline styles may be constants
+or accessors. Accessors run once on the main thread; only normalized geometry
+and style values cross the worker boundary. Invalid individual records are
+skipped with typed, nonfatal `data` errors that include the layer ID.
+
+Trips use paths with matching per-vertex timestamps:
+
+```ts
+basemap.setDataLayer({
+  id: "vehicles",
+  type: "trips",
+  data: trips,
+  playing: true,
+  currentTime: 0,
+  loopLength: 1800,
+  trailLength: 180,
+  speed: 1,
+  width: 2,
+});
+
+basemap.setTripsPlayback("vehicles", { playing: false, currentTime: 900 });
+basemap.seekTripsPlayback("vehicles", 720, { playing: false });
+basemap.stepTripsPlayback("vehicles", 15);
+```
+
+`seekTripsPlayback` and `stepTripsPlayback` support video-style timelines
+without rebuilding or resending trip geometry. Seeking clamps to the loop by
+default; pass `{ wrap: true }` for circular stepping. The optional `playing`
+flag lets a control pause while dragging and restore its previous playback
+state on release.
+
+Use `setDataLayer`, `updateDataLayer`, `removeDataLayer`,
+`setDataLayerVisible`, `getDataLayers`, and `clearDataLayers` to manage the
+registry. Common visibility, opacity, ordering, and picking updates use compact
+worker patches instead of resending geometry. Static layer rasters are reused
+while trips update at a 30 fps worker cadence; the latest texture continues to
+reproject at display refresh rate. `queryDataFeatures` and the
+`datafeatureenter`, `datafeatureleave`, and `datafeatureclick` events expose the
+winning dot owner independently from basemap feature queries. Input URLs remain
+the application's responsibility; the package accepts parsed data and has no
+deck.gl runtime dependency.
 
 ## Camera modes
 
-`screen` is the default. Dots stay square and locked to the viewport while pan,
-zoom, and bearing changes reproject the most recent worker frame. Pitch remains
-zero.
+`surface` is the default low-resolution 3D mode. It starts top-down at the
+host map's current pitch; enabling buildings does not change that camera. The
+semantic frame is placed on a flat Web Mercator plane and transformed with
+MapLibre's public custom-layer camera matrix, so dots foreshorten during pitch
+and orbiting while labels billboard to the viewport by default. Its worker
+frame is fitted to the complete camera ground footprint, including the wider
+area visible toward the horizon, with bounded resolution at extreme pitch.
+Pitch can be disabled independently with `camera: { pitch: false }`.
 
 ```ts
-const basemap = new LowResBasemap({ camera: { rotation: true } });
-```
-
-`surface` is an experimental low-resolution 3D mode. The semantic frame is
-placed on a flat Web Mercator plane and transformed with MapLibre's public
-custom-layer camera matrix, so dots foreshorten during pitch and orbiting while
-labels billboard to the viewport by default. Its worker frame is fitted to the
-complete camera ground footprint,
-including the wider area visible toward the horizon, with bounded resolution
-at extreme pitch.
-
-```ts
-basemap
-  .setProjectionMode("surface")
-  .setCamera({ rotation: true, pitch: true, maxPitch: 70 });
+const basemap = new LowResBasemap({
+  camera: { rotation: true, pitch: true, maxPitch: 70 },
+});
 
 // Restore map-aligned, foreshortened labels when that is the desired style.
 basemap.setLabelsBillboard(false);
@@ -178,17 +241,56 @@ The same choice can be made at construction with
 `labels: { visible: true, billboard: false }`. The boolean `labels` shorthand
 continues to control visibility.
 
+Optional atmospheric fog hides the finite surface edge as the map approaches
+the horizon. Regular fog uses a smooth blend; dithered fog uses a 4×4 ordered
+pattern anchored to CSS pixels, so its visual scale is stable on retina
+displays. Fog is inactive in screen mode and eases in over the first 20 degrees
+of pitch. Fog defaults to disabled; enabling it without specifying a mode uses
+the dithered style.
+
+```ts
+const basemap = new LowResBasemap({
+  fog: {
+    visible: true,
+    mode: "dithered",
+    start: 0.55,
+    end: 0.95,
+    opacity: 1,
+  },
+});
+
+basemap.setFog({ mode: "regular", color: [20, 24, 30] });
+basemap.setFogVisible(false);
+```
+
+`start` and `end` are screen-space depth positions from the bottom/near edge
+(`0`) to the top/far edge (`1`). They are independent of MapLibre's camera clip
+planes. Ground-ray intersection is used only to make exposed frame boundaries
+fully fogged. Without an explicit color, fog follows the active theme's
+composed ground color, including greyscale changes. Fog is rendered after
+package labels and the documented data slots, while controls outside the
+WebGL canvas remain clear.
+
+`screen` keeps dots square and locked to the viewport while pan, zoom, and
+bearing changes reproject the most recent worker frame. It can be selected
+explicitly when pitch is not required:
+
+```ts
+const basemap = new LowResBasemap({ projectionMode: "screen" });
+```
+
 OpenMapTiles building heights can optionally be rendered as native MapLibre
 extrusions above the semantic surface and below application data:
 
 ```ts
 const basemap = new LowResBasemap({
-  projectionMode: "surface",
   buildings3D: { visible: true, minZoom: 14, opacity: 0.82 },
 });
 
 basemap.setBuildings3DVisible(false);
 ```
+
+Changing building visibility never changes projection, bearing, or pitch.
 
 The building source defaults to the named `base` source and expects an
 OpenMapTiles `building` layer with `render_height`, `render_min_height`, and
@@ -210,11 +312,17 @@ of surface mode.
 - `setLayers(...)`, `getLayers()`, and `setLayerVisible(...)`
 - `setProjectionMode(...)` and `setCamera(...)`
 - `setBuildings3DVisible(...)` and `getBuildings3DVisible()`
+- `setFog(...)`, `setFogVisible(...)`, and `getFogOptions()`
 - `setHeatmap(...)`, `setHeatmapData(...)`, `setHeatmapVisible(...)`,
   `getHeatmapOptions()`, and `clearHeatmap()`
+- `setDataLayer(...)`, `updateDataLayer(...)`, `removeDataLayer(...)`,
+  `setDataLayerVisible(...)`, `getDataLayers()`, and `clearDataLayers()`
+- `setTripsPlayback(...)`, `seekTripsPlayback(...)`,
+  `stepTripsPlayback(...)`, `getTripsPlayback(...)`, and
+  `queryDataFeatures(...)`
 - `setSelectedFeature(...)`, `queryFeatures(...)`, and `refresh()`
-- typed load, render, error, feature, selection, style, layer, time,
-  projection, 3D-building, and heatmap events
+- typed load, render, error, basemap-feature, data-feature, selection, style,
+  layer, time, projection, 3D-building, fog, and heatmap events
 
 Hover and persistent selection use the transferable owner texture. Query
 results include `sourceId` and `packId`, and `featureMatches` provides a helper
@@ -226,9 +334,11 @@ for filtering those results.
    failures, and maintains per-source decoded LRUs.
 2. Enabled packs normalize and deterministically order semantic features.
 3. Polygons become categorical or scalar dot grids; water derives coastlines.
-4. Point weights accumulate into a bounded, quantized density grid.
+4. A separate data worker rasterizes density, GeoJSON, trips, and locators into
+   dot-resolution color and owner buffers.
 5. Integer line paths compete by semantic rank inside each character cell.
-6. Compact typed buffers are transferred to a WebGL 2 compositor.
+6. Compact typed buffers are transferred to WebGL 2 cartography, data, and
+   marker compositors.
 7. Labels are independently budgeted and rendered above consumer data.
 
 During interaction, the latest buffers are reprojected while the worker

@@ -230,14 +230,21 @@ header span,
   font-size: var(--ui-icon-size);
 }
 
-#feature-query-toggle[aria-pressed="false"] {
+#feature-query-toggle[aria-pressed="false"],
+#fog-toggle[aria-pressed="false"] {
   color: #858b9a;
 }
 
-#feature-query-toggle[aria-pressed="true"] {
+#feature-query-toggle[aria-pressed="true"],
+#fog-toggle[aria-pressed="true"] {
   color: #f1f2f5;
   border-color: #626875;
   background: #252830;
+}
+
+#fog-toggle:disabled {
+  color: #555a66;
+  cursor: not-allowed;
 }
 
 .panel-tabs {
@@ -412,6 +419,61 @@ input[type="range"] {
   accent-color: #bbb;
 }
 
+.trips-transport {
+  margin: 10px 0 12px;
+  padding: 8px;
+  border: 1px solid #343740;
+  background: rgb(23 25 30 / 72%);
+}
+
+.trips-transport-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.trips-transport-controls output {
+  min-width: 82px;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.trips-transport > input[type="range"] {
+  display: block;
+  margin: 9px 0 1px;
+}
+
+.trips-play[aria-pressed="true"] {
+  color: #f1f2f5;
+  border-color: #626875;
+  background: #252830;
+}
+
+.trips-transport button:disabled {
+  color: #555a66;
+  cursor: not-allowed;
+}
+
+input[type="color"] {
+  width: 42px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid #3b3e48;
+  border-radius: 2px;
+  background: #17191e;
+  cursor: pointer;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 1px;
+}
+
 #bearing {
   direction: rtl;
 }
@@ -430,9 +492,19 @@ output {
 #readout {
   top: 52px;
   left: 14px;
+  display: flex;
+  height: var(--ui-control-size);
   max-width: min(440px, calc(100% - 28px));
-  padding: 9px 12px;
-  line-height: 1.5;
+  align-items: center;
+  padding: 0 10px;
+  overflow: hidden;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#readout[hidden] {
+  display: none;
 }
 
 #top-bar:has(#place-search:not(.is-collapsed)) ~ #readout {

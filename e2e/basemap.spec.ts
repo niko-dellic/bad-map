@@ -7,17 +7,90 @@ interface Diagnostics {
   lastDurationMs: number;
   generations: number[];
   heatmapEvents: number;
+  dataRenderEvents: number;
   featureEnterEvents: number;
 }
 
 const UBER_DATA_URL =
   "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/screen-grid/uber-pickup-locations.json";
+const HIGHWAY_ROADS_URL =
+  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/highway/roads.json";
+const HIGHWAY_ACCIDENTS_URL =
+  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/highway/accidents.csv";
+const TRIPS_DATA_URL =
+  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/trips/trips-v7.json";
 const PHOTON_SEARCH_URL = "https://photon.komoot.io/api/**";
 const pickupFixture = Array.from({ length: 625 }, (_, index) => {
   const x = index % 25;
   const y = Math.floor(index / 25);
   return [-74.025 + x * 0.0015, 40.695 + y * 0.0015, 1 + ((x + y) % 8)];
 });
+const highwayFixture = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [-101.2, 38],
+          [-98.8, 38.2],
+        ],
+      },
+      properties: {
+        state: "KS",
+        type: "I",
+        id: "70",
+        name: "Interstate 70",
+        length: 120,
+      },
+    },
+    {
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [-100.2, 36.8],
+          [-99.7, 39.2],
+        ],
+      },
+      properties: {
+        state: "KS",
+        type: "US",
+        id: "83",
+        name: "US Highway 83",
+        length: 90,
+      },
+    },
+  ],
+};
+const accidentFixture = [
+  "state,type,id,year,incidents,fatalities",
+  "KS,I,70,2015,24,9",
+  "KS,US,83,2015,40,14",
+  "KS,I,70,2010,18,6",
+  "KS,US,83,2010,30,11",
+].join("\n");
+const tripsFixture = [
+  {
+    vendor: 0,
+    path: [
+      [-74.02, 40.7],
+      [-74.005, 40.715],
+      [-73.99, 40.73],
+    ],
+    timestamps: [0, 900, 1800],
+  },
+  {
+    vendor: 1,
+    path: [
+      [-73.985, 40.7],
+      [-74.0, 40.72],
+      [-74.015, 40.735],
+    ],
+    timestamps: [0, 900, 1800],
+  },
+];
 
 async function diagnostics(page: import("@playwright/test").Page) {
   return page.evaluate<Diagnostics>(() =>
@@ -31,6 +104,9 @@ async function diagnostics(page: import("@playwright/test").Page) {
 test.beforeEach(async ({ page }) => {
   await page.route(UBER_DATA_URL, (route) =>
     route.fulfill({ json: pickupFixture }),
+  );
+  await page.route(TRIPS_DATA_URL, (route) =>
+    route.fulfill({ json: tripsFixture }),
   );
   await page.goto("/");
   await expect(page.locator("#status")).toContainText("rendered in");
@@ -53,6 +129,7 @@ test("orders data and marker boundaries between base and labels", async ({
               data: string;
               markers: string;
               labels: string;
+              fog: string;
             };
           };
         };
@@ -65,6 +142,7 @@ test("orders data and marker boundaries between base and labels", async ({
       data: basemap.layerIds.data,
       markers: basemap.layerIds.markers,
       labels: basemap.layerIds.labels,
+      fog: basemap.layerIds.fog,
       hasBase: Boolean(map.getLayer(basemap.layerIds.base)),
       hasLabels: Boolean(map.getLayer(basemap.layerIds.labels)),
     };
@@ -80,6 +158,141 @@ test("orders data and marker boundaries between base and labels", async ({
   expect(result.ids.indexOf(result.markers)).toBeLessThan(
     result.ids.indexOf(result.labels),
   );
+  expect(result.ids.indexOf(result.labels)).toBeLessThan(
+    result.ids.indexOf(result.fog),
+  );
+});
+
+test("picks markers above overlapping data and emits data transitions", async ({
+  page,
+}) => {
+  const generation = await page.evaluate(() => {
+    const { map, basemap, diagnostics } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { getCenter(): { lng: number; lat: number } };
+          diagnostics: { dataRenderEvents: number };
+          basemap: {
+            setFeatureInteractionEnabled(enabled: boolean): void;
+            setProjectionMode(mode: "screen"): void;
+            setDataLayer(layer: unknown): void;
+            on(
+              type: string,
+              listener: (event: { feature: { layerId: string } }) => void,
+            ): void;
+          };
+        };
+        __dataEvents?: { enter: string[]; leave: string[]; click: string[] };
+      }
+    ).__badMapDemo;
+    const events = {
+      enter: [] as string[],
+      leave: [] as string[],
+      click: [] as string[],
+    };
+    (window as typeof window & { __dataEvents?: typeof events }).__dataEvents =
+      events;
+    basemap.setFeatureInteractionEnabled(true);
+    basemap.setProjectionMode("screen");
+    basemap.on("datafeatureenter", ({ feature }) =>
+      events.enter.push(feature.layerId),
+    );
+    basemap.on("datafeatureleave", ({ feature }) =>
+      events.leave.push(feature.layerId),
+    );
+    basemap.on("datafeatureclick", ({ feature }) =>
+      events.click.push(feature.layerId),
+    );
+    const center = map.getCenter();
+    basemap.setDataLayer({
+      id: "overlap-point",
+      type: "geojson",
+      data: { type: "Point", coordinates: [center.lng, center.lat] },
+      point: { radius: 16, color: [71, 184, 151] },
+      order: 1,
+    });
+    basemap.setDataLayer({
+      id: "overlap-marker",
+      type: "waypoint",
+      data: [{ position: [center.lng, center.lat] }],
+      order: 2,
+    });
+    return diagnostics.dataRenderEvents;
+  });
+  await expect
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(generation);
+
+  const findMarker = () =>
+    page.evaluate(() => {
+      const { map, basemap } = (
+        window as typeof window & {
+          __badMapDemo: {
+            map: {
+              getCenter(): { lng: number; lat: number };
+              project(point: { lng: number; lat: number }): {
+                x: number;
+                y: number;
+              };
+            };
+            basemap: {
+              queryDataFeatures(point: [number, number]): { layerId: string }[];
+            };
+          };
+        }
+      ).__badMapDemo;
+      const projected = map.project(map.getCenter());
+      for (let y = projected.y - 24; y <= projected.y + 24; y += 2)
+        for (let x = projected.x - 24; x <= projected.x + 24; x += 2)
+          if (
+            basemap.queryDataFeatures([x, y])[0]?.layerId === "overlap-marker"
+          )
+            return { x, y };
+      return null;
+    });
+  await expect.poll(findMarker).not.toBeNull();
+  const hit = await findMarker();
+  await page.mouse.move(hit!.x, hit!.y);
+  await page.mouse.click(hit!.x, hit!.y);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as typeof window & { __dataEvents?: { enter: string[] } }
+        ).__dataEvents?.enter.at(-1),
+      ),
+    )
+    .toBe("overlap-marker");
+  expect(
+    await page.evaluate(() =>
+      (
+        window as typeof window & { __dataEvents?: { click: string[] } }
+      ).__dataEvents?.click.at(-1),
+    ),
+  ).toBe("overlap-marker");
+
+  const removalGeneration = (await diagnostics(page)).dataRenderEvents;
+  await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __badMapDemo: { basemap: { removeDataLayer(id: string): void } };
+      }
+    ).__badMapDemo.basemap.removeDataLayer("overlap-marker"),
+  );
+  await expect
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(removalGeneration);
+  await page.mouse.move(8, 8);
+  await page.mouse.move(hit!.x, hit!.y);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as typeof window & { __dataEvents?: { enter: string[] } }
+        ).__dataEvents?.enter.at(-1),
+      ),
+    )
+    .toBe("overlap-point");
 });
 
 test("debounces OSM place lookup and selects a result", async ({ page }) => {
@@ -147,7 +360,26 @@ test("debounces OSM place lookup and selects a result", async ({ page }) => {
   await expect(input).toBeHidden();
   await expect(page.locator("#place-search-results")).toBeHidden();
   await expect(input).toHaveValue("Amsterdam");
-  await expect(page.locator(".maplibregl-marker")).toHaveCount(1);
+  await expect(page.locator(".maplibregl-marker")).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const { basemap } = (
+          window as typeof window & {
+            __badMapDemo: {
+              basemap: { getDataLayers(): { id: string; type: string }[] };
+            };
+          }
+        ).__badMapDemo;
+        return basemap
+          .getDataLayers()
+          .some(
+            (layer) =>
+              layer.id === "demo-search-waypoint" && layer.type === "waypoint",
+          );
+      }),
+    )
+    .toBe(true);
   await expect
     .poll(() =>
       page.evaluate(
@@ -165,6 +397,22 @@ test("debounces OSM place lookup and selects a result", async ({ page }) => {
   await page.locator("#place-search-clear").click();
   await expect(input).toBeHidden();
   await expect(page.locator(".maplibregl-marker")).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const { basemap } = (
+          window as typeof window & {
+            __badMapDemo: {
+              basemap: { getDataLayers(): { id: string }[] };
+            };
+          }
+        ).__badMapDemo;
+        return basemap
+          .getDataLayers()
+          .some((layer) => layer.id === "demo-search-waypoint");
+      }),
+    )
+    .toBe(false);
 });
 
 test("keeps mouse feature queries off until cursor mode is enabled", async ({
@@ -173,7 +421,7 @@ test("keeps mouse feature queries off until cursor mode is enabled", async ({
   const toggle = page.locator("#feature-query-toggle");
   const readout = page.locator("#readout");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect(readout).toHaveText("Mouse feature queries are off.");
+  await expect(readout).toBeHidden();
   expect((await diagnostics(page)).featureEnterEvents).toBe(0);
 
   const point = await page.evaluate(() => {
@@ -199,7 +447,15 @@ test("keeps mouse feature queries off until cursor mode is enabled", async ({
 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(readout).toBeVisible();
   await expect(readout).toHaveText("Move over the map to inspect a feature.");
+  const [readoutBox, toggleBox] = await Promise.all([
+    readout.boundingBox(),
+    toggle.boundingBox(),
+  ]);
+  expect(readoutBox).not.toBeNull();
+  expect(toggleBox).not.toBeNull();
+  expect(readoutBox!.height).toBe(toggleBox!.height);
   await page.mouse.move(point!.x + 20, point!.y + 20);
   await page.mouse.move(point!.x, point!.y);
   await expect
@@ -208,7 +464,7 @@ test("keeps mouse feature queries off until cursor mode is enabled", async ({
 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect(readout).toHaveText("Mouse feature queries are off.");
+  await expect(readout).toBeHidden();
   const disabledCount = (await diagnostics(page)).featureEnterEvents;
   await page.mouse.move(point!.x + 20, point!.y + 20);
   await page.mouse.move(point!.x, point!.y);
@@ -225,6 +481,91 @@ test("toggles greyscale without worker rasterization", async ({ page }) => {
   expect(after.styleEvents).toBe(before.styleEvents + 1);
   expect(after.renderEvents).toBe(before.renderEvents);
   expect(after.lastGeneration).toBe(before.lastGeneration);
+});
+
+test("toggles regular and dithered fog without worker rasterization", async ({
+  page,
+}) => {
+  const toggle = page.locator("#fog-toggle");
+  const mode = page.locator("#fog-mode");
+  const color = page.locator("#fog-color");
+  const themeColor = page.locator("#fog-theme-color");
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(toggle).toHaveAttribute("aria-label", "Enable dithered fog");
+  await expect(mode).toHaveValue("disabled");
+  await expect(themeColor).toBeChecked();
+  await expect(color).toHaveValue("#0f0f0f");
+
+  const before = await diagnostics(page);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(toggle).toHaveAttribute("aria-label", "Disable dithered fog");
+  await expect(mode).toHaveValue("dithered");
+  await mode.selectOption("regular");
+  await expect(toggle).toHaveAttribute("aria-label", "Disable regular fog");
+  await mode.selectOption("dithered");
+  await expect(toggle).toHaveAttribute("aria-label", "Disable dithered fog");
+  await page.locator("#fog-start").fill("0.35");
+  await page.locator("#fog-end").fill("0.82");
+  await color.fill("#5c6f91");
+  await expect(themeColor).not.toBeChecked();
+  await expect(page.locator("#fog-status")).toContainText(
+    "dithered · 35–82% viewport depth · #5c6f91",
+  );
+  await page.waitForTimeout(100);
+  const after = await diagnostics(page);
+  expect(after.renderEvents).toBe(before.renderEvents);
+  expect(after.lastGeneration).toBe(before.lastGeneration);
+  expect(
+    await page.evaluate(() =>
+      (
+        window as typeof window & {
+          __badMapDemo: {
+            basemap: {
+              getFogOptions(): {
+                visible: boolean;
+                mode: string;
+                color?: readonly number[];
+              };
+            };
+          };
+        }
+      ).__badMapDemo.basemap.getFogOptions(),
+    ),
+  ).toMatchObject({
+    visible: true,
+    mode: "dithered",
+    color: [92, 111, 145],
+  });
+
+  await themeColor.check();
+  await expect(page.locator("#fog-status")).toContainText("theme color");
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as typeof window & {
+            __badMapDemo: {
+              basemap: { getFogOptions(): { color?: readonly number[] } };
+            };
+          }
+        ).__badMapDemo.basemap.getFogOptions().color,
+    ),
+  ).toBeUndefined();
+
+  await mode.selectOption("disabled");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await mode.selectOption("regular");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(toggle).toHaveAttribute("aria-label", "Disable regular fog");
+
+  await page.locator("#projection").selectOption("screen");
+  await expect(toggle).toBeDisabled();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await page.locator("#projection").selectOption("surface");
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
 });
 
 test("exposes stable slots and switches between bearing and surface cameras", async ({
@@ -257,6 +598,7 @@ test("exposes stable slots and switches between bearing and surface cameras", as
   expect(slots.ids).toMatchObject({
     data: "bad-map-data",
     markers: "bad-map-markers",
+    fog: "bad-map-fog",
     interaction: "bad-map-interaction",
   });
   expect(slots.packs).toEqual(
@@ -264,6 +606,17 @@ test("exposes stable slots and switches between bearing and surface cameras", as
   );
   expect(slots.packs).not.toContain("weather");
   expect(slots.labelsBillboard).toBe(true);
+  await expect(page.locator("#projection")).toHaveValue("surface");
+  await expect(page.locator("#pitch")).toBeEnabled();
+  expect(
+    await page.evaluate(() =>
+      (
+        window as typeof window & {
+          __badMapDemo: { map: { getPitch(): number } };
+        }
+      ).__badMapDemo.map.getPitch(),
+    ),
+  ).toBe(0);
 
   await page.locator("#bearing").fill("32");
   await expect
@@ -277,6 +630,20 @@ test("exposes stable slots and switches between bearing and surface cameras", as
       ),
     )
     .toBeCloseTo(32, 0);
+
+  await page.locator("#projection").selectOption("screen");
+  await expect(page.locator("#pitch")).toBeDisabled();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as typeof window & {
+            __badMapDemo: { map: { getPitch(): number } };
+          }
+        ).__badMapDemo.map.getPitch(),
+      ),
+    )
+    .toBe(0);
 
   await page.locator("#projection").selectOption("surface");
   await expect
@@ -353,6 +720,16 @@ test("keeps the bearing slider aligned with mouse rotation", async ({
 test("toggles theme-aware 3D buildings in the surface stack", async ({
   page,
 }) => {
+  const cameraBefore = await page.evaluate(() => {
+    const { map } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { getBearing(): number; getPitch(): number };
+        };
+      }
+    ).__badMapDemo;
+    return { bearing: map.getBearing(), pitch: map.getPitch() };
+  });
   await page.locator("#tab-layers").click();
   await page.locator("#buildings-3d").check();
   await expect(page.locator("#projection")).toHaveValue("surface");
@@ -361,9 +738,11 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
       window as typeof window & {
         __badMapDemo: {
           map: {
+            getBearing(): number;
             getLayersOrder(): string[];
             getLayoutProperty(id: string, property: string): unknown;
             getPaintProperty(id: string, property: string): unknown;
+            getPitch(): number;
           };
           basemap: {
             layerIds: {
@@ -390,6 +769,7 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
       baseIndex: ids.indexOf(basemap.layerIds.base),
       buildingIndex: ids.indexOf(basemap.layerIds.buildings),
       dataIndex: ids.indexOf(basemap.layerIds.data),
+      camera: { bearing: map.getBearing(), pitch: map.getPitch() },
     };
   });
   expect(enabled.requested).toBe(true);
@@ -397,6 +777,7 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
   expect(enabled.color).toMatch(/^rgb/);
   expect(enabled.baseIndex).toBeLessThan(enabled.buildingIndex);
   expect(enabled.buildingIndex).toBeLessThan(enabled.dataIndex);
+  expect(enabled.camera).toEqual(cameraBefore);
 
   await page.locator("#tab-display").click();
   await page.locator("#projection").selectOption("screen");
@@ -465,8 +846,8 @@ test("compares native and worker-rendered pickup heatmaps", async ({
     "weighted pickups · lowres",
   );
   await expect
-    .poll(async () => (await diagnostics(page)).lastGeneration)
-    .toBeGreaterThan(before.lastGeneration);
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(before.dataRenderEvents);
   const lowRes = await page.evaluate(() => {
     const { map, basemap } = (
       window as typeof window & {
@@ -524,11 +905,267 @@ test("compares native and worker-rendered pickup heatmaps", async ({
   const afterMode = await diagnostics(page);
   await page.locator("#heatmap-radius").fill("52");
   await expect
-    .poll(async () => (await diagnostics(page)).lastGeneration)
-    .toBeGreaterThan(afterMode.lastGeneration);
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(afterMode.dataRenderEvents);
   expect((await diagnostics(page)).heatmapEvents).toBeGreaterThan(
     before.heatmapEvents,
   );
+});
+
+test("lazy-loads and restyles the pixelated highway safety layer", async ({
+  page,
+}) => {
+  const requestedBeforeActivation = await page.evaluate(
+    ([roads, accidents]) =>
+      performance
+        .getEntriesByType("resource")
+        .some((entry) => entry.name === roads || entry.name === accidents),
+    [HIGHWAY_ROADS_URL, HIGHWAY_ACCIDENTS_URL],
+  );
+  expect(requestedBeforeActivation).toBe(false);
+
+  let roadRequests = 0;
+  let accidentRequests = 0;
+  await page.route(HIGHWAY_ROADS_URL, (route) => {
+    roadRequests += 1;
+    return route.fulfill({ json: highwayFixture });
+  });
+  await page.route(HIGHWAY_ACCIDENTS_URL, (route) => {
+    accidentRequests += 1;
+    return route.fulfill({
+      body: accidentFixture,
+      contentType: "text/csv",
+    });
+  });
+
+  await page.locator("#tab-data").click();
+  const before = await diagnostics(page);
+  await page.locator("#highway-mode").selectOption("lowres");
+  await expect(page.locator("#highway-status")).toContainText("2 roads · 2015");
+  expect(roadRequests).toBe(1);
+  expect(accidentRequests).toBe(1);
+  await expect
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(before.dataRenderEvents);
+
+  const layer = await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __badMapDemo: {
+          basemap: {
+            getDataLayers(): {
+              id: string;
+              type: string;
+              featureCount: number;
+            }[];
+          };
+        };
+      }
+    ).__badMapDemo.basemap
+      .getDataLayers()
+      .find((candidate) => candidate.id === "demo-highway-safety"),
+  );
+  expect(layer).toMatchObject({ type: "geojson", featureCount: 2 });
+
+  const restyleGeneration = (await diagnostics(page)).dataRenderEvents;
+  await page.locator("#highway-year").selectOption("2010");
+  await page.locator("#highway-color").selectOption("incidents");
+  await page.locator("#highway-width").selectOption("fatalities");
+  await page.locator("#highway-opacity").fill("0.55");
+  await expect(page.locator("#highway-status")).toContainText("2 roads · 2010");
+  await expect
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(restyleGeneration);
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              __badMapDemo: { map: { getCenter(): { lng: number } } };
+            }
+          ).__badMapDemo.map.getCenter().lng,
+      ),
+    )
+    .toBeCloseTo(-100, 1);
+  const settledGeneration = (await diagnostics(page)).dataRenderEvents;
+  await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __badMapDemo: { basemap: { refresh(): void } };
+      }
+    ).__badMapDemo.basemap.refresh(),
+  );
+  await expect
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(settledGeneration);
+
+  const hit = await page.evaluate(() => {
+    const { basemap } = (
+      window as typeof window & {
+        __badMapDemo: {
+          basemap: {
+            queryDataFeatures(point: [number, number]): {
+              properties: Record<string, unknown>;
+            }[];
+          };
+        };
+      }
+    ).__badMapDemo;
+    for (let y = 80; y < innerHeight - 40; y += 4)
+      for (let x = 40; x < innerWidth - 360; x += 4) {
+        const feature = basemap.queryDataFeatures([x, y])[0];
+        if (feature?.properties.name)
+          return { x, y, properties: feature.properties };
+      }
+    return null;
+  });
+  expect(hit?.properties).toMatchObject({
+    state: "KS",
+    incidents: expect.any(Number),
+    fatalities: expect.any(Number),
+  });
+  await page.mouse.move(hit!.x, hit!.y);
+  await expect(page.locator("#readout")).toContainText(/KS/);
+  await expect(page.locator("#readout")).toContainText(/crashes/);
+  await expect(page.locator("#readout")).toContainText(/fatalities/);
+});
+
+test("loads animated trips by default, then pauses, seeks, and restyles them", async ({
+  page,
+}) => {
+  await page.locator("#tab-data").click();
+  await expect(page.locator("#trips-mode")).toHaveValue("lowres");
+  await expect(page.locator("#trips-status")).toContainText("2 animated trips");
+  expect(
+    await page.evaluate(
+      (url) =>
+        performance
+          .getEntriesByType("resource")
+          .filter((entry) => entry.name === url).length,
+      TRIPS_DATA_URL,
+    ),
+  ).toBe(1);
+
+  const playback = () =>
+    page.evaluate(() =>
+      (
+        window as typeof window & {
+          __badMapDemo: {
+            basemap: {
+              getTripsPlayback(id: string): {
+                playing: boolean;
+                currentTime: number;
+                speed: number;
+                trailLength: number;
+                loopLength: number;
+              };
+            };
+          };
+        }
+      ).__badMapDemo.basemap.getTripsPlayback("demo-nyc-trips"),
+    );
+  const started = await playback();
+  expect(started).toMatchObject({
+    playing: true,
+    speed: 1,
+    trailLength: 180,
+    loopLength: 1800,
+  });
+  await expect(page.locator("#trips-play")).toHaveAttribute(
+    "aria-label",
+    "Pause trips",
+  );
+  await expect(page.locator("#trips-play")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.locator("#trips-time-value")).toContainText("/ 1800");
+  await expect
+    .poll(async () => (await playback()).currentTime)
+    .toBeGreaterThan(started.currentTime);
+
+  await page.locator("#trips-play").click();
+  const paused = await playback();
+  expect(paused.playing).toBe(false);
+  await expect(page.locator("#trips-play")).toHaveAttribute(
+    "aria-label",
+    "Play trips",
+  );
+  await page.waitForTimeout(180);
+  expect((await playback()).currentTime).toBeCloseTo(paused.currentTime, 5);
+
+  await page.locator("#trips-time").fill("900");
+  await page.locator("#trips-step-forward").click();
+  expect(await playback()).toMatchObject({ playing: false, currentTime: 915 });
+  await expect(page.locator("#trips-time-value")).toHaveText("915 / 1800");
+  await page.locator("#trips-step-back").click();
+  expect((await playback()).currentTime).toBe(900);
+  await page.locator("#trips-time").focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  expect((await playback()).currentTime).toBe(960);
+  await page.keyboard.press("Home");
+  expect((await playback()).currentTime).toBe(0);
+  await page.keyboard.press("End");
+  expect((await playback()).currentTime).toBe(1800);
+
+  // A drag temporarily pauses playback and restores only a previously playing
+  // timeline, matching video transport behavior.
+  await page.locator("#trips-time").fill("900");
+  await page.locator("#trips-play").click();
+  await page.locator("#trips-time").dispatchEvent("pointerdown");
+  expect((await playback()).playing).toBe(false);
+  await page.locator("#trips-time").fill("720");
+  await page.evaluate(() =>
+    window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })),
+  );
+  await expect.poll(async () => (await playback()).playing).toBe(true);
+  await page.locator("#trips-play").click();
+  await page.locator("#trips-time").dispatchEvent("pointerdown");
+  await page.locator("#trips-time").fill("600");
+  await page.evaluate(() =>
+    window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })),
+  );
+  expect(await playback()).toMatchObject({
+    playing: false,
+    currentTime: 600,
+  });
+
+  await page.locator("#trips-time").fill("900");
+  await page.locator("#trips-speed").fill("2");
+  await page.locator("#trips-trail").fill("240");
+  await page.locator("#trips-width").fill("3");
+  await page.locator("#trips-opacity").fill("0.45");
+  expect(await playback()).toMatchObject({
+    playing: false,
+    currentTime: 900,
+    speed: 2,
+    trailLength: 240,
+  });
+
+  const beforeCamera = (await diagnostics(page)).dataRenderEvents;
+  await page.evaluate(() => {
+    const { map } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: {
+            jumpTo(options: unknown): void;
+            resize(): void;
+          };
+        };
+      }
+    ).__badMapDemo;
+    map.jumpTo({ bearing: 28, pitch: 40, zoom: 13.2 });
+    map.resize();
+  });
+  await expect
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(beforeCamera);
+  await page.locator("#trips-play").click();
+  await expect
+    .poll(async () => (await playback()).currentTime)
+    .toBeGreaterThan(900);
 });
 
 test("collapses the settings panel without hiding hover information", async ({
@@ -539,6 +1176,8 @@ test("collapses the settings panel without hiding hover information", async ({
   const header = page.locator("header");
 
   await expect(settings.locator("#readout")).toHaveCount(0);
+  await page.locator("#feature-query-toggle").click();
+  await expect(readout).toBeVisible();
   const [readoutBox, headerBox] = await Promise.all([
     readout.boundingBox(),
     header.boundingBox(),
@@ -591,6 +1230,7 @@ test("organizes controls into tabs and names the next cell preset", async ({
   await expect(page.locator("#panel-data")).toBeHidden();
   await page.locator("#tab-layers").click();
   await expect(page.locator("#panel-layers")).toBeVisible();
+  await expect(page.locator("#labels")).not.toBeChecked();
   for (const control of ["#labels", "#buildings-3d"]) {
     await expect(
       page.locator(control).locator("xpath=ancestor::section/h2"),

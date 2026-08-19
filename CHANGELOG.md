@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.9.0
+
+### Added
+
+- An ID-based data-layer registry for low-resolution heatmaps, waypoints,
+  complete GeoJSON geometry, and timestamped animated trips.
+- A dedicated data-raster worker, dot-resolution RGBA/owner buffers, package
+  marker rendering, data feature queries, and typed data interaction events.
+- Lazy US highway safety and NYC animated-trips examples with data-driven
+  styling, picking, playback, and style controls.
+- A video-style trips transport with play/pause, drag scrubbing, keyboard
+  seeking, fixed-step controls, and reusable seek/step package methods.
+- Optional regular and ordered-dithered atmospheric fog for pitched surface
+  maps, with disabled/regular/dithered demo controls, screen-space start/end
+  tuning, custom or theme-derived color, a toolbar toggle, runtime controls,
+  theme-aware defaults, and dithered as the default enabled style.
+
+### Changed
+
+- Enabled the animated NYC trips example and hid cartographic labels in the
+  initial demo view so colored movement is immediately legible.
+- Replaced the demo's DOM place pin with a lattice-aligned locator target.
+- Moved heatmap processing into the extensible data worker while preserving
+  the existing heatmap methods and visual grammar.
+- Cached static data rasters during trip playback and added incremental worker
+  patches for visibility, opacity, ordering, and picking changes.
+- Activated `bad-map-markers` as the waypoint compositor and kept every data
+  palette independent from basemap greyscale.
+
 ## 0.8.0
 
 ### Added
@@ -22,6 +51,8 @@
   Phosphor icons and a dedicated data tab.
 - Enabled demo rotation by default and removed the demo-only weather source
   and time controls.
+- Made the geographic 3D surface the default projection and decoupled the demo
+  building toggle from projection and camera changes.
 
 ## 0.7.0
 

@@ -4,7 +4,19 @@ import {
   type Map as MapLibreMap,
   type PointLike,
 } from "maplibre-gl";
-import { BaseLayer, DataLayer, LabelsLayer, SlotLayer } from "./render";
+import {
+  BaseLayer,
+  DataLayer,
+  FogLayer,
+  LabelsLayer,
+  MarkerLayer,
+  SlotLayer,
+} from "./render";
+import {
+  dataLayerState,
+  serializeDataLayer,
+  type SerializedDataLayer,
+} from "./data";
 import {
   fitSurfaceViewState,
   lngLatToWorld,
@@ -15,23 +27,36 @@ import { streets } from "./packs";
 import { composeTheme, resolveTheme } from "./theme";
 import type {
   CellGeometry,
+  DataRasterFrame,
   LowResBasemapOptions,
   LowResBuildings3DOptions,
   LowResColorMode,
+  LowResDataFeature,
+  LowResDataLayer,
+  LowResDataLayerState,
+  LowResDataLayerUpdate,
   LowResError,
   LowResEventMap,
   LowResFeature,
+  LowResFogMode,
+  LowResFogOptions,
   LowResHeatmapOptions,
   LowResHeatmapPoint,
   LowResLayerPackDescriptor,
   LowResProjectionMode,
   LowResSource,
   LowResTheme,
+  LowResTripsPlayback,
+  LowResTripsSeekOptions,
   RGB,
   RasterFrame,
   RasterViewState,
 } from "./types";
 import type { WorkerRequest, WorkerResponse } from "./worker/protocol";
+import type {
+  DataWorkerRequest,
+  DataWorkerResponse,
+} from "./worker/data-protocol";
 
 const DEFAULT_SOURCE: LowResSource = {
   tileJSON: "https://tiles.openfreemap.org/planet",
@@ -40,6 +65,14 @@ const DEFAULT_SOURCE: LowResSource = {
 
 const DEFAULT_CELL: CellGeometry = { width: 8, height: 16, dotSize: 2 };
 const BUILDINGS_SOURCE_ID = "bad-map-buildings-source";
+const DEFAULT_HEATMAP_LAYER_ID = "bad-map-default-heatmap";
+const DEFAULT_FOG = {
+  visible: false,
+  mode: "dithered",
+  start: 0.55,
+  end: 0.95,
+  opacity: 1,
+} as const satisfies Required<Omit<LowResFogOptions, "color">>;
 const DEFAULT_HEATMAP_PALETTE = [
   [40, 109, 155],
   [87, 173, 133],
@@ -61,6 +94,15 @@ interface HeatmapState {
   palette?: readonly [RGB, RGB, RGB, RGB];
 }
 
+interface FogState {
+  visible: boolean;
+  mode: LowResFogMode;
+  start: number;
+  end: number;
+  opacity: number;
+  color?: RGB;
+}
+
 export class LowResBasemap {
   readonly layerIds = {
     base: "bad-map-base",
@@ -68,6 +110,7 @@ export class LowResBasemap {
     data: "bad-map-data",
     markers: "bad-map-markers",
     labels: "bad-map-labels",
+    fog: "bad-map-fog",
     interaction: "bad-map-interaction",
   } as const;
 
@@ -90,22 +133,35 @@ export class LowResBasemap {
   #colorMode: LowResColorMode;
   #projectionMode: LowResProjectionMode;
   #buildings3D: Required<LowResBuildings3DOptions>;
+  #fog: FogState;
   #heatmap: HeatmapState;
+  #dataLayers = new Map<
+    string,
+    { source: LowResDataLayer; serialized: SerializedDataLayer }
+  >();
   #camera: { rotation: boolean; pitch: boolean; maxPitch: number };
   #styleRevision = 0;
   #map: MapLibreMap | undefined;
   #worker: Worker | undefined;
+  #dataWorker: Worker | undefined;
   #workerFactory: () => Worker;
   #frame: RasterFrame | undefined;
+  #dataFrame: DataRasterFrame | undefined;
   #generation = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #lastRenderRequest = 0;
   #attribution: AttributionControl | undefined;
   #baseLayer: BaseLayer | undefined;
   #dataLayer: DataLayer | undefined;
+  #markerLayer: MarkerLayer | undefined;
   #labelsLayer: LabelsLayer | undefined;
+  #fogLayer: FogLayer | undefined;
   #featureInteractionEnabled: boolean;
   #hovered: LowResFeature | undefined;
+  #hoveredData: LowResDataFeature | undefined;
+  #animationFrame: number | undefined;
+  #animationTime = 0;
+  #lastAnimationRaster = 0;
   #selectedKey: string | undefined;
   #listeners = new Map<keyof LowResEventMap, Set<(event: never) => void>>();
   #rotationState:
@@ -134,9 +190,12 @@ export class LowResBasemap {
     validateCell(this.#cell);
     this.#baseTheme = resolveTheme(options.theme);
     this.#colorMode = validateColorMode(options.colorMode ?? "greyscale");
-    this.#projectionMode = options.projectionMode ?? "screen";
+    this.#projectionMode = options.projectionMode ?? "surface";
     this.#buildings3D = normalizeBuildings3D(options.buildings3D);
+    this.#fog = normalizeFog(options.fog);
     this.#heatmap = normalizeHeatmap(options.heatmap);
+    for (const layer of options.dataLayers ?? []) this.#storeDataLayer(layer);
+    this.#storeDataLayer(this.#defaultHeatmapLayer());
     this.#featureInteractionEnabled = options.featureInteraction ?? true;
     const surface = this.#projectionMode === "surface";
     this.#camera = {
@@ -184,16 +243,29 @@ export class LowResBasemap {
         fatal: false,
         cause: event.error,
       });
+    this.#dataWorker = new Worker(
+      new URL("./worker/data.worker.ts", import.meta.url),
+      { type: "module", name: "bad-map-data-raster" },
+    );
+    this.#dataWorker.onmessage = (event: MessageEvent<DataWorkerResponse>) =>
+      this.#onDataWorkerMessage(event.data);
+    this.#dataWorker.onerror = (event) =>
+      this.#emitError({
+        code: "data",
+        message: event.message,
+        fatal: false,
+        cause: event.error,
+      });
+    this.#sendDataLayers();
     this.#post({
       type: "configure",
       sources: this.#sources,
       layers: this.#layers,
       maxCachedTiles: this.#options.maxCachedTiles,
     });
-    this.#sendHeatmap(true);
-
     const provider = {
       frame: () => this.#frame,
+      dataFrame: () => this.#dataFrame,
       viewState: () => this.#currentViewState(),
       theme: () => this.#theme,
       labelsVisible: () => this.#options.labels,
@@ -209,17 +281,22 @@ export class LowResBasemap {
           this.#baseTheme.lines.motorway,
           this.#baseTheme.labels.medical,
         ] as const,
-      heatmapPalette: () => this.#heatmapPalette(),
-      heatmapOpacity: () => this.#heatmap.opacity,
+      fog: () => ({
+        ...this.#fog,
+        color: this.#fog.color ?? this.#theme.fills.ground,
+      }),
     };
     this.#baseLayer = new BaseLayer(this.layerIds.base, provider);
     this.#dataLayer = new DataLayer(this.layerIds.data, provider);
+    this.#markerLayer = new MarkerLayer(this.layerIds.markers, provider);
     this.#labelsLayer = new LabelsLayer(this.layerIds.labels, provider);
+    this.#fogLayer = new FogLayer(this.layerIds.fog, provider);
     map.addLayer(this.#baseLayer);
     this.#ensureBuildings3DLayer();
     map.addLayer(this.#dataLayer);
-    map.addLayer(new SlotLayer(this.layerIds.markers));
+    map.addLayer(this.#markerLayer);
     map.addLayer(this.#labelsLayer);
+    map.addLayer(this.#fogLayer);
     map.addLayer(new SlotLayer(this.layerIds.interaction));
 
     if (this.#options.attribution) {
@@ -238,6 +315,7 @@ export class LowResBasemap {
       map.on("click", this.#onClick);
     }
     this.#requestRender(true);
+    this.#scheduleAnimation();
     return this;
   }
 
@@ -245,6 +323,8 @@ export class LowResBasemap {
     const map = this.#map;
     if (!map) return;
     if (this.#timer) clearTimeout(this.#timer);
+    if (this.#animationFrame !== undefined)
+      cancelAnimationFrame(this.#animationFrame);
     map.off("move", this.#onMove);
     map.off("moveend", this.#onMoveEnd);
     map.off("resize", this.#onMoveEnd);
@@ -252,6 +332,7 @@ export class LowResBasemap {
     map.off("click", this.#onClick);
     for (const id of [
       this.layerIds.interaction,
+      this.layerIds.fog,
       this.layerIds.labels,
       this.layerIds.markers,
       this.layerIds.data,
@@ -264,14 +345,22 @@ export class LowResBasemap {
     if (this.#attribution) map.removeControl(this.#attribution);
     this.#restoreNorthUp(map);
     this.#post({ type: "dispose" });
+    this.#postData({ type: "dispose" });
     this.#worker?.terminate();
+    this.#dataWorker?.terminate();
     this.#worker = undefined;
+    this.#dataWorker = undefined;
     this.#map = undefined;
     this.#frame = undefined;
+    this.#dataFrame = undefined;
     this.#baseLayer = undefined;
     this.#dataLayer = undefined;
+    this.#markerLayer = undefined;
     this.#labelsLayer = undefined;
+    this.#fogLayer = undefined;
     this.#hovered = undefined;
+    this.#hoveredData = undefined;
+    this.#animationFrame = undefined;
   }
 
   setTheme(theme: LowResBasemapOptions["theme"]): this {
@@ -355,6 +444,44 @@ export class LowResBasemap {
     return this.#buildings3D.visible;
   }
 
+  setFog(options: LowResFogOptions): this {
+    const next: FogState = {
+      ...this.#fog,
+      ...(options.visible === undefined ? {} : { visible: options.visible }),
+      ...(options.mode === undefined ? {} : { mode: options.mode }),
+      ...(options.start === undefined ? {} : { start: options.start }),
+      ...(options.end === undefined ? {} : { end: options.end }),
+      ...(options.opacity === undefined ? {} : { opacity: options.opacity }),
+    };
+    if ("color" in options) {
+      if (options.color) next.color = [...options.color] as RGB;
+      else delete next.color;
+    }
+    validateFog(next);
+    if (fogStateEquals(next, this.#fog)) return this;
+    this.#fog = next;
+    this.#map?.triggerRepaint();
+    this.#emitFogChange();
+    return this;
+  }
+
+  setFogVisible(visible: boolean): this {
+    return this.setFog({ visible });
+  }
+
+  getFogOptions(): Required<Omit<LowResFogOptions, "color">> & {
+    color?: RGB;
+  } {
+    return {
+      visible: this.#fog.visible,
+      mode: this.#fog.mode,
+      start: this.#fog.start,
+      end: this.#fog.end,
+      opacity: this.#fog.opacity,
+      ...(this.#fog.color ? { color: [...this.#fog.color] as RGB } : {}),
+    };
+  }
+
   setHeatmap(options: LowResHeatmapOptions): this {
     const previous = this.#heatmap;
     const next: HeatmapState = {
@@ -374,24 +501,10 @@ export class LowResBasemap {
         : { points: normalizeHeatmapData(options.data) }),
     };
     validateHeatmap(next);
-    const dataChanged = next.points !== previous.points;
-    const rasterChanged =
-      dataChanged ||
-      next.visible !== previous.visible ||
-      next.radius !== previous.radius ||
-      next.intensity !== previous.intensity ||
-      next.maxDensity !== previous.maxDensity;
-    const paintChanged =
-      next.opacity !== previous.opacity || next.palette !== previous.palette;
     this.#heatmap = next;
-    if (rasterChanged) {
-      this.#sendHeatmap(dataChanged);
-      this.refresh();
-    }
-    if (paintChanged) {
-      this.#styleRevision += 1;
-      this.#map?.triggerRepaint();
-    }
+    this.#storeDataLayer(this.#defaultHeatmapLayer());
+    this.#sendDataLayer(DEFAULT_HEATMAP_LAYER_ID);
+    this.#requestDataRender();
     this.#emitHeatmapChange();
     return this;
   }
@@ -419,6 +532,175 @@ export class LowResBasemap {
       opacity: this.#heatmap.opacity,
       palette: this.#heatmapPalette(),
       pointCount: this.#heatmap.points.length / 3,
+    };
+  }
+
+  setDataLayer(layer: LowResDataLayer): this {
+    if (layer.id === DEFAULT_HEATMAP_LAYER_ID)
+      throw new RangeError(`${DEFAULT_HEATMAP_LAYER_ID} is reserved`);
+    this.#storeDataLayer(layer);
+    this.#sendDataLayer(layer.id);
+    this.#requestDataRender();
+    this.#emitDataLayerChange(layer.id);
+    this.#scheduleAnimation();
+    return this;
+  }
+
+  updateDataLayer(id: string, update: LowResDataLayerUpdate): this {
+    const current = this.#dataLayers.get(id)?.source;
+    if (!current || id === DEFAULT_HEATMAP_LAYER_ID)
+      throw new RangeError(`Unknown data layer: ${id}`);
+    const source = {
+      ...current,
+      ...update,
+      id,
+      type: current.type,
+    } as LowResDataLayer;
+    const serialized = serializeDataLayer(source);
+    this.#dataLayers.set(id, { source, serialized });
+    const patchable = Object.keys(update).every((key) =>
+      ["visible", "opacity", "order", "pickable"].includes(key),
+    );
+    if (patchable)
+      this.#postData({
+        type: "patch-layer",
+        id,
+        patch: {
+          visible: serialized.visible,
+          opacity: serialized.opacity,
+          order: serialized.order,
+          pickable: serialized.pickable,
+        },
+      });
+    else this.#sendDataLayer(id);
+    this.#requestDataRender();
+    this.#emitDataLayerChange(id);
+    this.#scheduleAnimation();
+    return this;
+  }
+
+  removeDataLayer(id: string): this {
+    if (id === DEFAULT_HEATMAP_LAYER_ID)
+      throw new RangeError("Use clearHeatmap() for the default heatmap");
+    if (!this.#dataLayers.delete(id)) return this;
+    this.#postData({ type: "remove-layer", id });
+    this.#requestDataRender();
+    this.#emit("datalayerchange", {
+      target: this,
+      id,
+      action: "remove",
+    });
+    this.#scheduleAnimation();
+    return this;
+  }
+
+  setDataLayerVisible(id: string, visible: boolean): this {
+    return this.updateDataLayer(id, { visible });
+  }
+
+  getDataLayers(): LowResDataLayerState[] {
+    return [...this.#dataLayers.values()]
+      .filter(({ source }) => source.id !== DEFAULT_HEATMAP_LAYER_ID)
+      .map(({ serialized }) => dataLayerState(serialized));
+  }
+
+  clearDataLayers(): this {
+    for (const id of [...this.#dataLayers.keys()])
+      if (id !== DEFAULT_HEATMAP_LAYER_ID) {
+        this.#dataLayers.delete(id);
+        this.#postData({ type: "remove-layer", id });
+      }
+    this.#requestDataRender();
+    this.#emit("datalayerchange", {
+      target: this,
+      id: "*",
+      action: "clear",
+    });
+    this.#scheduleAnimation();
+    return this;
+  }
+
+  setTripsPlayback(id: string, playback: LowResTripsPlayback): this {
+    const entry = this.#dataLayers.get(id);
+    if (
+      !entry ||
+      entry.source.type !== "trips" ||
+      entry.serialized.type !== "trips"
+    )
+      throw new RangeError(`Unknown trips layer: ${id}`);
+    const source = {
+      ...entry.source,
+      ...(playback.playing === undefined ? {} : { playing: playback.playing }),
+      ...(playback.currentTime === undefined
+        ? {}
+        : { currentTime: playback.currentTime }),
+      ...(playback.speed === undefined ? {} : { speed: playback.speed }),
+      ...(playback.trailLength === undefined
+        ? {}
+        : { trailLength: playback.trailLength }),
+    };
+    const serialized = serializeDataLayer(source);
+    if (serialized.type !== "trips")
+      throw new TypeError(`Data layer ${id} is not a trips layer`);
+    this.#dataLayers.set(id, { source, serialized });
+    this.#postData({
+      type: "playback",
+      id,
+      currentTime: serialized.currentTime,
+      playing: serialized.playing,
+      speed: serialized.speed,
+      trailLength: serialized.trailLength,
+    });
+    this.#requestDataRender();
+    this.#emitDataLayerChange(id);
+    this.#scheduleAnimation();
+    return this;
+  }
+
+  seekTripsPlayback(
+    id: string,
+    currentTime: number,
+    options: LowResTripsSeekOptions = {},
+  ): this {
+    if (!Number.isFinite(currentTime))
+      throw new TypeError("Trip playback time must be finite");
+    const playback = this.getTripsPlayback(id);
+    const time = options.wrap
+      ? ((currentTime % playback.loopLength) + playback.loopLength) %
+        playback.loopLength
+      : Math.min(playback.loopLength, Math.max(0, currentTime));
+    return this.setTripsPlayback(id, {
+      currentTime: time,
+      ...(options.playing === undefined ? {} : { playing: options.playing }),
+    });
+  }
+
+  stepTripsPlayback(
+    id: string,
+    delta: number,
+    options: LowResTripsSeekOptions = {},
+  ): this {
+    if (!Number.isFinite(delta))
+      throw new TypeError("Trip playback step must be finite");
+    return this.seekTripsPlayback(
+      id,
+      this.getTripsPlayback(id).currentTime + delta,
+      options,
+    );
+  }
+
+  getTripsPlayback(
+    id: string,
+  ): Required<LowResTripsPlayback> & { loopLength: number } {
+    const layer = this.#dataLayers.get(id)?.serialized;
+    if (!layer || layer.type !== "trips")
+      throw new RangeError(`Unknown trips layer: ${id}`);
+    return {
+      playing: layer.playing,
+      currentTime: layer.currentTime,
+      speed: layer.speed,
+      trailLength: layer.trailLength,
+      loopLength: layer.loopLength,
     };
   }
 
@@ -522,6 +804,53 @@ export class LowResBasemap {
     ];
   }
 
+  queryDataFeatures(point: PointLike): LowResDataFeature[] {
+    const frame = this.#dataFrame;
+    const map = this.#map;
+    if (!frame || !map) return [];
+    const screen = pointLike(point);
+    const current = this.#currentViewState();
+    if (!current) return [];
+    const lngLat = map.unproject([screen.x, screen.y]);
+    const framePoint =
+      this.#projectionMode === "surface"
+        ? geographicFramePoint(frame.state, lngLat.lng, lngLat.lat)
+        : reprojectPoint(
+            [screen.x, screen.y],
+            reprojectionTransform(frame.state, current),
+          );
+    const dotColumn = Math.floor(framePoint[0] / (frame.state.cell.width / 2));
+    const dotRow = Math.floor(framePoint[1] / (frame.state.cell.height / 4));
+    if (
+      dotColumn < 0 ||
+      dotRow < 0 ||
+      dotColumn >= frame.dotColumns ||
+      dotRow >= frame.dotRows
+    )
+      return [];
+    const offset = dotRow * frame.dotColumns + dotColumn;
+    const owners = [
+      frame.markerOwner[offset] ?? 0,
+      frame.dataOwner[offset] ?? 0,
+    ];
+    const results: LowResDataFeature[] = [];
+    for (const owner of owners) {
+      if (!owner || results.some((feature) => feature.owner === owner))
+        continue;
+      const record = frame.features[owner - 1];
+      if (!record) continue;
+      results.push({
+        ...record,
+        cell: {
+          column: Math.floor(screen.x / current.cell.width),
+          row: Math.floor(screen.y / current.cell.height),
+        },
+        lngLat: { lng: lngLat.lng, lat: lngLat.lat },
+      });
+    }
+    return results;
+  }
+
   setFeatureInteractionEnabled(enabled: boolean): this {
     if (enabled === this.#featureInteractionEnabled) return this;
     this.#featureInteractionEnabled = enabled;
@@ -536,6 +865,12 @@ export class LowResBasemap {
       }
     }
     if (!enabled) {
+      if (this.#hoveredData)
+        this.#emit("datafeatureleave", {
+          target: this,
+          feature: this.#hoveredData,
+        });
+      this.#hoveredData = undefined;
       if (this.#hovered)
         this.#emit("featureleave", { target: this, feature: this.#hovered });
       this.#hovered = undefined;
@@ -581,6 +916,26 @@ export class LowResBasemap {
     this.#requestRender(true);
   };
   readonly #onMouseMove = (event: { point: PointLike }): void => {
+    const nextData = this.queryDataFeatures(event.point)[0];
+    if (
+      nextData?.owner !== this.#hoveredData?.owner ||
+      nextData?.layerId !== this.#hoveredData?.layerId
+    ) {
+      if (this.#hoveredData)
+        this.#emit("datafeatureleave", {
+          target: this,
+          feature: this.#hoveredData,
+        });
+      this.#hoveredData = nextData;
+      if (nextData)
+        this.#emit("datafeatureenter", { target: this, feature: nextData });
+    }
+    if (nextData) {
+      if (this.#hovered)
+        this.#emit("featureleave", { target: this, feature: this.#hovered });
+      this.#hovered = undefined;
+      return;
+    }
     const next = this.queryFeatures(event.point)[0];
     if (next?.id === this.#hovered?.id) return;
     if (this.#hovered)
@@ -590,6 +945,11 @@ export class LowResBasemap {
     if (next) this.#emit("featureenter", { target: this, feature: next });
   };
   readonly #onClick = (event: { point: PointLike }): void => {
+    const dataFeature = this.queryDataFeatures(event.point)[0];
+    if (dataFeature) {
+      this.#emit("datafeatureclick", { target: this, feature: dataFeature });
+      return;
+    }
     const feature = this.queryFeatures(event.point)[0];
     if (feature) {
       this.setSelectedFeature(feature);
@@ -607,6 +967,11 @@ export class LowResBasemap {
       if (!state) return;
       this.#generation += 1;
       this.#post({ type: "render", generation: this.#generation, state });
+      this.#postData({
+        type: "render",
+        generation: this.#generation,
+        state,
+      });
     };
     if (immediate) {
       if (this.#timer) clearTimeout(this.#timer);
@@ -646,30 +1011,51 @@ export class LowResBasemap {
     });
   }
 
+  #onDataWorkerMessage(message: DataWorkerResponse): void {
+    if (message.type === "ready") return;
+    if (message.type === "error") {
+      this.#emitError({
+        code: "data",
+        message: message.message,
+        fatal: false,
+        cause: message.cause,
+        ...(message.layerId ? { layerId: message.layerId } : {}),
+      });
+      return;
+    }
+    if (message.frame.generation < (this.#dataFrame?.generation ?? -1)) return;
+    this.#dataFrame = message.frame;
+    for (const warning of message.frame.warnings) this.#emitError(warning);
+    this.#map?.triggerRepaint();
+    this.#emit("datarender", {
+      target: this,
+      durationMs: message.frame.durationMs,
+      generation: message.frame.generation,
+    });
+  }
+
   #post(message: WorkerRequest, transfer: Transferable[] = []): void {
     this.#worker?.postMessage(message, { transfer });
   }
 
-  #sendHeatmap(includeData: boolean): void {
-    if (!this.#worker) return;
-    const points = includeData ? this.#heatmap.points.slice() : undefined;
-    this.#post(
-      {
-        type: "set-heatmap",
-        options: {
-          visible: this.#heatmap.visible,
-          radius: this.#heatmap.radius,
-          intensity: this.#heatmap.intensity,
-          maxDensity: this.#heatmap.maxDensity,
-        },
-        ...(points ? { points } : {}),
-      },
-      points ? [points.buffer] : [],
-    );
+  #postData(message: DataWorkerRequest): void {
+    this.#dataWorker?.postMessage(message);
   }
 
   #heatmapPalette(): readonly [RGB, RGB, RGB, RGB] {
     return this.#heatmap.palette ?? DEFAULT_HEATMAP_PALETTE;
+  }
+
+  #emitFogChange(): void {
+    this.#emit("fogchange", {
+      target: this,
+      visible: this.#fog.visible,
+      mode: this.#fog.mode,
+      start: this.#fog.start,
+      end: this.#fog.end,
+      opacity: this.#fog.opacity,
+      color: this.#fog.color ?? this.#theme.fills.ground,
+    });
   }
 
   #emitHeatmapChange(): void {
@@ -679,6 +1065,121 @@ export class LowResBasemap {
       pointCount: this.#heatmap.points.length / 3,
     });
   }
+
+  #storeDataLayer(layer: LowResDataLayer): void {
+    this.#dataLayers.set(layer.id, {
+      source: layer,
+      serialized: serializeDataLayer(layer),
+    });
+  }
+
+  #defaultHeatmapLayer(): LowResDataLayer {
+    return {
+      id: DEFAULT_HEATMAP_LAYER_ID,
+      type: "heatmap",
+      data: this.#heatmap.points,
+      visible: this.#heatmap.visible,
+      radius: this.#heatmap.radius,
+      intensity: this.#heatmap.intensity,
+      maxDensity: this.#heatmap.maxDensity,
+      opacity: this.#heatmap.opacity,
+      palette: this.#heatmapPalette(),
+      order: -1000,
+      pickable: false,
+    };
+  }
+
+  #sendDataLayers(): void {
+    if (!this.#dataWorker) return;
+    this.#postData({
+      type: "set-layers",
+      layers: [...this.#dataLayers.values()].map(
+        ({ serialized }) => serialized,
+      ),
+    });
+  }
+
+  #sendDataLayer(id: string): void {
+    const layer = this.#dataLayers.get(id)?.serialized;
+    if (layer) this.#postData({ type: "upsert-layer", layer });
+  }
+
+  #requestDataRender(): void {
+    const state = this.#renderViewState();
+    if (!state || !this.#dataWorker) return;
+    this.#generation += 1;
+    this.#postData({ type: "render", generation: this.#generation, state });
+  }
+
+  #emitDataLayerChange(id: string): void {
+    const layer = this.#dataLayers.get(id)?.serialized;
+    if (layer)
+      this.#emit("datalayerchange", {
+        target: this,
+        id,
+        action: "upsert",
+        layer: dataLayerState(layer),
+      });
+  }
+
+  #scheduleAnimation(): void {
+    if (!this.#map || this.#animationFrame !== undefined) return;
+    const playing = [...this.#dataLayers.values()].some(
+      ({ serialized }) =>
+        serialized.type === "trips" && serialized.visible && serialized.playing,
+    );
+    if (!playing) return;
+    this.#animationTime = performance.now();
+    this.#animationFrame = requestAnimationFrame(this.#animate);
+  }
+
+  readonly #animate = (now: number): void => {
+    this.#animationFrame = undefined;
+    if (!this.#map) return;
+    const elapsed = Math.min(
+      0.1,
+      Math.max(0, (now - this.#animationTime) / 1000),
+    );
+    this.#animationTime = now;
+    let playing = false;
+    for (const [id, entry] of this.#dataLayers) {
+      if (
+        entry.source.type !== "trips" ||
+        entry.serialized.type !== "trips" ||
+        !entry.serialized.visible ||
+        !entry.serialized.playing
+      )
+        continue;
+      playing = true;
+      if (!document.hidden) {
+        const currentTime =
+          (((entry.serialized.currentTime +
+            elapsed * entry.serialized.speed * 60) %
+            entry.serialized.loopLength) +
+            entry.serialized.loopLength) %
+          entry.serialized.loopLength;
+        entry.serialized.currentTime = currentTime;
+        entry.source = { ...entry.source, currentTime };
+        this.#postData({
+          type: "playback",
+          id,
+          currentTime,
+          playing: true,
+          speed: entry.serialized.speed,
+          trailLength: entry.serialized.trailLength,
+        });
+      }
+    }
+    if (
+      playing &&
+      !document.hidden &&
+      now - this.#lastAnimationRaster >= 1000 / 30
+    ) {
+      this.#lastAnimationRaster = now;
+      this.#requestDataRender();
+    }
+    if (playing) this.#animationFrame = requestAnimationFrame(this.#animate);
+  };
 
   #currentViewState(): RasterViewState | undefined {
     if (!this.#map) return undefined;
@@ -975,6 +1476,66 @@ function normalizeBuildings3D(
   if (!Number.isFinite(result.heightScale) || result.heightScale < 0)
     throw new RangeError("buildings3D.heightScale must be non-negative");
   return result;
+}
+
+function normalizeFog(options: LowResBasemapOptions["fog"]): FogState {
+  const configured = typeof options === "object" ? options : {};
+  const state: FogState = {
+    visible:
+      typeof options === "boolean"
+        ? options
+        : (configured.visible ?? DEFAULT_FOG.visible),
+    mode: configured.mode ?? DEFAULT_FOG.mode,
+    start: configured.start ?? DEFAULT_FOG.start,
+    end: configured.end ?? DEFAULT_FOG.end,
+    opacity: configured.opacity ?? DEFAULT_FOG.opacity,
+    ...(configured.color ? { color: [...configured.color] as RGB } : {}),
+  };
+  validateFog(state);
+  return state;
+}
+
+function validateFog(state: FogState): void {
+  if (state.mode !== "regular" && state.mode !== "dithered")
+    throw new TypeError(`Unsupported fog mode: ${String(state.mode)}`);
+  if (
+    ![state.start, state.end].every(
+      (value) => Number.isFinite(value) && value >= 0 && value <= 1,
+    ) ||
+    state.start >= state.end
+  )
+    throw new RangeError(
+      "Fog start and end must be between zero and one, with start before end",
+    );
+  if (!Number.isFinite(state.opacity) || state.opacity < 0 || state.opacity > 1)
+    throw new RangeError("Fog opacity must be between zero and one");
+  if (state.color) validateRgb(state.color, "Fog color");
+}
+
+function validateRgb(color: RGB, label: string): void {
+  if (
+    color.length !== 3 ||
+    color.some(
+      (channel) => !Number.isFinite(channel) || channel < 0 || channel > 255,
+    )
+  )
+    throw new RangeError(`${label} channels must be between 0 and 255`);
+}
+
+function fogStateEquals(left: FogState, right: FogState): boolean {
+  return (
+    left.visible === right.visible &&
+    left.mode === right.mode &&
+    left.start === right.start &&
+    left.end === right.end &&
+    left.opacity === right.opacity &&
+    ((!left.color && !right.color) ||
+      Boolean(
+        left.color &&
+        right.color &&
+        left.color.every((channel, index) => channel === right.color![index]),
+      ))
+  );
 }
 
 function normalizeHeatmap(
