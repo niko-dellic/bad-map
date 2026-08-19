@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0e0f12" />
+    <title>bad-map — semantic low-resolution maps</title>
+  </head>
+  <body>
+    <div id="app">
+      <div
+        id="map"
+        aria-label="Interactive low-resolution map of New York City"
+      ></div>
+      <header>
+        <strong>bad-map</strong>
+        <span id="status">loading vector tiles…</span>
+      </header>
+      <aside id="readout">Move over the map to inspect a feature.</aside>
+      <nav>
+        <button id="theme" type="button">light theme</button>
+        <button id="cells" type="button">larger cells</button>
+        <button id="labels" type="button">hide labels</button>
+      </nav>
+    </div>
+    <script type="module" src="/demo/main.ts"></script>
+  </body>
+</html>
