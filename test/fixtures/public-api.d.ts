@@ -4,7 +4,7 @@ export { DARK_THEME, LIGHT_THEME } from "./theme";
 export { composeTheme, greyscaleColor, relativeLuminance } from "./theme";
 export { featureMatches, landuse, marine, political, streets, topographic, transit, weather, } from "./packs";
 export { FillClass, LabelInk, LineClass, bandFor, effectiveStyleZoom, sourceZoom, } from "./style";
-export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResCameraOptions, LowResBuildings3DOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResHeatmapOptions, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTheme, RGB, } from "./types";
+export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResCameraOptions, LowResBuildings3DOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResHeatmapOptions, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResLabelsOptions, LowResProjectionMode, LowResSource, LowResTheme, RGB, } from "./types";
 
 // dist/low-res-basemap.d.ts
 import { type Map as MapLibreMap, type PointLike } from "maplibre-gl";
@@ -28,6 +28,8 @@ export declare class LowResBasemap {
     setCell(cell: Partial<CellGeometry>): this;
     setLocale(locale: string): this;
     setLabelsVisible(visible: boolean): this;
+    setLabelsBillboard(billboard: boolean): this;
+    getLabelsBillboard(): boolean;
     setProjectionMode(mode: LowResProjectionMode): this;
     setCamera(options: LowResBasemapOptions["camera"]): this;
     setBuildings3DVisible(visible: boolean): this;

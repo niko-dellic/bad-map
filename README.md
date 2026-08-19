@@ -47,7 +47,7 @@ Six stable IDs divide the render stack:
 ```ts
 basemap.layerIds.base; // fills and low-resolution linework
 basemap.layerIds.buildings; // optional native 3D building extrusions
-basemap.layerIds.data; // application data boundary
+basemap.layerIds.data; // low-resolution data compositor
 basemap.layerIds.markers; // marker boundary
 basemap.layerIds.labels; // package labels
 basemap.layerIds.interaction; // top interaction boundary
@@ -60,7 +60,8 @@ above the cartography and below labels:
 map.addLayer(dataLayer, basemap.layerIds.markers);
 ```
 
-Color modes only affect package-owned layers.
+Color modes only affect basemap cartography and labels. Native visualization
+layers and the package data compositor keep their own palettes.
 
 ## Semantic packs and sources
 
@@ -112,7 +113,12 @@ smooth and remains outside package theme and greyscale changes:
 map.addLayer(nativeHeatmapLayer, basemap.layerIds.markers);
 ```
 
-The built-in low-resolution heatmap accepts compact
+The built-in low-resolution heatmap is the first density channel in the
+transparent `bad-map-data` compositor. This dedicated pass is the extension
+point for future raster, classified, contour, and other low-resolution data
+textures; they remain separate from fill, road, and label styling.
+
+The heatmap accepts compact
 `[longitude, latitude, weight]` triplets. Density is accumulated in the worker,
 quantized to one byte per cell, and expressed through ordered square-dot
 dithering:
@@ -136,8 +142,9 @@ basemap.setHeatmap({
 
 `maxDensity: 0` normalizes against the current view. A fixed positive maximum
 is preferable for comparisons and animated data because it prevents the color
-domain from changing while panning. Custom palettes participate in the active
-greyscale mode. Use `setHeatmapData()`, `setHeatmapVisible()`, or
+domain from changing while panning. Custom palettes remain unchanged when the
+basemap switches between color and greyscale. Use `setHeatmapData()`,
+`setHeatmapVisible()`, or
 `clearHeatmap()` for runtime updates.
 
 ## Camera modes
@@ -152,8 +159,9 @@ const basemap = new LowResBasemap({ camera: { rotation: true } });
 
 `surface` is an experimental low-resolution 3D mode. The semantic frame is
 placed on a flat Web Mercator plane and transformed with MapLibre's public
-custom-layer camera matrix, so dots and labels foreshorten during pitch and
-orbiting. Its worker frame is fitted to the complete camera ground footprint,
+custom-layer camera matrix, so dots foreshorten during pitch and orbiting while
+labels billboard to the viewport by default. Its worker frame is fitted to the
+complete camera ground footprint,
 including the wider area visible toward the horizon, with bounded resolution
 at extreme pitch.
 
@@ -161,7 +169,14 @@ at extreme pitch.
 basemap
   .setProjectionMode("surface")
   .setCamera({ rotation: true, pitch: true, maxPitch: 70 });
+
+// Restore map-aligned, foreshortened labels when that is the desired style.
+basemap.setLabelsBillboard(false);
 ```
+
+The same choice can be made at construction with
+`labels: { visible: true, billboard: false }`. The boolean `labels` shorthand
+continues to control visibility.
 
 OpenMapTiles building heights can optionally be rendered as native MapLibre
 extrusions above the semantic surface and below application data:
@@ -180,8 +195,8 @@ OpenMapTiles `building` layer with `render_height`, `render_min_height`, and
 `hide_3d` properties. Extrusions use the active theme and greyscale mode. They
 are smooth native geometry by design; the semantic ground map retains its
 square-dot treatment. Sources requiring custom authorization should configure
-those requests through the host MapLibre map. Terrain elevation and billboard
-labels are not yet part of surface mode.
+those requests through the host MapLibre map. Terrain elevation is not yet part
+of surface mode.
 
 ## Runtime API
 
@@ -189,7 +204,8 @@ labels are not yet part of surface mode.
 
 - `addTo(map)` and `remove()`
 - `setTheme(theme)` and `setColorMode("color" | "greyscale")`
-- `setCell(...)`, `setLocale(...)`, and `setLabelsVisible(...)`
+- `setCell(...)`, `setLocale(...)`, `setLabelsVisible(...)`,
+  `setLabelsBillboard(...)`, and `getLabelsBillboard()`
 - `setSource(...)`, `setSources(...)`, and `setSourceTime(...)`
 - `setLayers(...)`, `getLayers()`, and `setLayerVisible(...)`
 - `setProjectionMode(...)` and `setCamera(...)`

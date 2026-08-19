@@ -98,10 +98,12 @@ test("exposes stable slots and switches between bearing and surface cameras", as
     const { map, basemap } = (
       window as typeof window & {
         __badMapDemo: {
-          map: { getLayer(id: string): unknown };
+          map: { getLayer(id: string): { type?: string } | undefined };
           basemap: {
-            layerIds: Record<string, string>;
+            layerIds: { data: string } & Record<string, string>;
             getLayers(): { id: string }[];
+            getLabelsBillboard(): boolean;
+            setLabelsBillboard(value: boolean): void;
           };
         };
       }
@@ -109,10 +111,13 @@ test("exposes stable slots and switches between bearing and surface cameras", as
     return {
       ids: basemap.layerIds,
       present: Object.values(basemap.layerIds).every((id) => map.getLayer(id)),
+      dataType: map.getLayer(basemap.layerIds.data)?.type,
       packs: basemap.getLayers().map((pack) => pack.id),
+      labelsBillboard: basemap.getLabelsBillboard(),
     };
   });
   expect(slots.present).toBe(true);
+  expect(slots.dataType).toBe("custom");
   expect(slots.ids).toMatchObject({
     data: "bad-map-data",
     markers: "bad-map-markers",
@@ -121,6 +126,7 @@ test("exposes stable slots and switches between bearing and surface cameras", as
   expect(slots.packs).toEqual(
     expect.arrayContaining(["streets", "transit", "weather"]),
   );
+  expect(slots.labelsBillboard).toBe(true);
 
   await page.locator("#rotation").check();
   await page.locator("#bearing").fill("32");
@@ -149,6 +155,21 @@ test("exposes stable slots and switches between bearing and surface cameras", as
     )
     .toBeGreaterThan(20);
   await expect(page.locator("#pitch")).toBeEnabled();
+  const billboardOptOut = await page.evaluate(() => {
+    const { basemap } = (
+      window as typeof window & {
+        __badMapDemo: {
+          basemap: {
+            setLabelsBillboard(value: boolean): void;
+            getLabelsBillboard(): boolean;
+          };
+        };
+      }
+    ).__badMapDemo;
+    basemap.setLabelsBillboard(false);
+    return basemap.getLabelsBillboard();
+  });
+  expect(billboardOptOut).toBe(false);
 });
 
 test("keeps the bearing slider aligned with mouse rotation", async ({
@@ -339,8 +360,26 @@ test("compares native and worker-rendered pickup heatmaps", async ({
     visible: true,
     pointCount: pickupFixture.length,
     nativeVisibility: "none",
-    greyscale: true,
+    greyscale: false,
   });
+
+  const palette = lowRes.palette;
+  await page.locator("#color-mode").click();
+  const paletteAfterColorMode = await page.evaluate(
+    () =>
+      (
+        window as typeof window & {
+          __badMapDemo: {
+            basemap: {
+              getHeatmapOptions(): {
+                palette?: readonly (readonly [number, number, number])[];
+              };
+            };
+          };
+        }
+      ).__badMapDemo.basemap.getHeatmapOptions().palette,
+  );
+  expect(paletteAfterColorMode).toEqual(palette);
 
   const afterMode = await diagnostics(page);
   await page.locator("#heatmap-radius").fill("52");

@@ -4,7 +4,7 @@ import {
   type Map as MapLibreMap,
   type PointLike,
 } from "maplibre-gl";
-import { BaseLayer, LabelsLayer, SlotLayer } from "./render";
+import { BaseLayer, DataLayer, LabelsLayer, SlotLayer } from "./render";
 import {
   fitSurfaceViewState,
   lngLatToWorld,
@@ -12,12 +12,7 @@ import {
   reprojectionTransform,
 } from "./geometry";
 import { streets } from "./packs";
-import {
-  composeTheme,
-  greyscaleColor,
-  relativeLuminance,
-  resolveTheme,
-} from "./theme";
+import { composeTheme, resolveTheme } from "./theme";
 import type {
   CellGeometry,
   LowResBasemapOptions,
@@ -45,6 +40,12 @@ const DEFAULT_SOURCE: LowResSource = {
 
 const DEFAULT_CELL: CellGeometry = { width: 8, height: 16, dotSize: 2 };
 const BUILDINGS_SOURCE_ID = "bad-map-buildings-source";
+const DEFAULT_HEATMAP_PALETTE = [
+  [40, 109, 155],
+  [87, 173, 133],
+  [239, 178, 75],
+  [226, 76, 91],
+] as const satisfies readonly [RGB, RGB, RGB, RGB];
 
 type Listener<K extends keyof LowResEventMap> = (
   event: LowResEventMap[K],
@@ -74,16 +75,16 @@ export class LowResBasemap {
     Pick<
       LowResBasemapOptions,
       | "locale"
-      | "labels"
       | "attribution"
       | "enforceNorthUp"
       | "maxCachedTiles"
       | "renderThrottleMs"
     >
-  >;
+  > & { labels: boolean };
   #sources: Record<string, LowResSource>;
   #layers: LowResLayerPackDescriptor[];
   #cell: CellGeometry;
+  #labelsBillboard: boolean;
   #baseTheme: LowResTheme;
   #theme: LowResTheme;
   #colorMode: LowResColorMode;
@@ -101,6 +102,7 @@ export class LowResBasemap {
   #lastRenderRequest = 0;
   #attribution: AttributionControl | undefined;
   #baseLayer: BaseLayer | undefined;
+  #dataLayer: DataLayer | undefined;
   #labelsLayer: LabelsLayer | undefined;
   #hovered: LowResFeature | undefined;
   #selectedKey: string | undefined;
@@ -124,6 +126,10 @@ export class LowResBasemap {
     };
     this.#layers = normalizeLayers(options.layers ?? [streets()]);
     this.#cell = { ...DEFAULT_CELL, ...options.cell };
+    this.#labelsBillboard =
+      typeof options.labels === "object"
+        ? (options.labels.billboard ?? true)
+        : true;
     validateCell(this.#cell);
     this.#baseTheme = resolveTheme(options.theme);
     this.#colorMode = validateColorMode(options.colorMode ?? "greyscale");
@@ -139,7 +145,10 @@ export class LowResBasemap {
     this.#theme = composeTheme(this.#baseTheme, this.#colorMode);
     this.#options = {
       locale: options.locale ?? "en",
-      labels: options.labels ?? true,
+      labels:
+        typeof options.labels === "object"
+          ? (options.labels.visible ?? true)
+          : (options.labels ?? true),
       attribution: options.attribution ?? true,
       enforceNorthUp: options.enforceNorthUp ?? false,
       maxCachedTiles: options.maxCachedTiles ?? 96,
@@ -186,18 +195,27 @@ export class LowResBasemap {
       viewState: () => this.#currentViewState(),
       theme: () => this.#theme,
       labelsVisible: () => this.#options.labels,
+      labelsBillboard: () => this.#labelsBillboard,
       styleRevision: () => this.#styleRevision,
       hoveredOwner: () => this.#hovered?.id ?? 0,
       selectedOwner: () => this.#selectedOwner(),
       projectionMode: () => this.#projectionMode,
+      scalarPalette: () =>
+        [
+          this.#baseTheme.lines.waterway,
+          this.#baseTheme.labels.park,
+          this.#baseTheme.lines.motorway,
+          this.#baseTheme.labels.medical,
+        ] as const,
       heatmapPalette: () => this.#heatmapPalette(),
       heatmapOpacity: () => this.#heatmap.opacity,
     };
     this.#baseLayer = new BaseLayer(this.layerIds.base, provider);
+    this.#dataLayer = new DataLayer(this.layerIds.data, provider);
     this.#labelsLayer = new LabelsLayer(this.layerIds.labels, provider);
     map.addLayer(this.#baseLayer);
     this.#ensureBuildings3DLayer();
-    map.addLayer(new SlotLayer(this.layerIds.data));
+    map.addLayer(this.#dataLayer);
     map.addLayer(new SlotLayer(this.layerIds.markers));
     map.addLayer(this.#labelsLayer);
     map.addLayer(new SlotLayer(this.layerIds.interaction));
@@ -246,6 +264,9 @@ export class LowResBasemap {
     this.#worker = undefined;
     this.#map = undefined;
     this.#frame = undefined;
+    this.#baseLayer = undefined;
+    this.#dataLayer = undefined;
+    this.#labelsLayer = undefined;
     this.#hovered = undefined;
   }
 
@@ -283,6 +304,17 @@ export class LowResBasemap {
     this.#styleRevision += 1;
     this.#map?.triggerRepaint();
     return this;
+  }
+
+  setLabelsBillboard(billboard: boolean): this {
+    if (billboard === this.#labelsBillboard) return this;
+    this.#labelsBillboard = billboard;
+    this.#map?.triggerRepaint();
+    return this;
+  }
+
+  getLabelsBillboard(): boolean {
+    return this.#labelsBillboard;
   }
 
   setProjectionMode(mode: LowResProjectionMode): this {
@@ -603,19 +635,7 @@ export class LowResBasemap {
   }
 
   #heatmapPalette(): readonly [RGB, RGB, RGB, RGB] {
-    const colors =
-      this.#heatmap.palette ??
-      ([
-        this.#baseTheme.lines.waterway,
-        this.#baseTheme.labels.park,
-        this.#baseTheme.lines.motorway,
-        this.#baseTheme.labels.medical,
-      ] as const);
-    if (this.#colorMode === "color") return colors;
-    const ground = relativeLuminance(this.#baseTheme.fills.ground);
-    return colors.map((color) =>
-      greyscaleColor(color, ground),
-    ) as unknown as readonly [RGB, RGB, RGB, RGB];
+    return this.#heatmap.palette ?? DEFAULT_HEATMAP_PALETTE;
   }
 
   #emitHeatmapChange(): void {

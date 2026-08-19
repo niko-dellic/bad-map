@@ -7,8 +7,17 @@
 - Native MapLibre and worker-rendered low-resolution heatmap examples using
   weighted NYC pickup data.
 - Compact point-density input, bounded worker kernels, stable density domains,
-  four-stop palettes, square-dot dithering, greyscale composition, and runtime
+  four-stop palettes, square-dot dithering, and runtime
   heatmap controls.
+- Screen-aligned surface labels by default, with constructor and runtime APIs
+  for selecting map-aligned labels instead.
+
+### Changed
+
+- Moved scalar and density textures into the transparent `bad-map-data`
+  compositor, establishing one extension point for low-resolution data layers.
+- Kept visualization palettes independent from basemap theme and greyscale
+  composition.
 
 ## 0.7.0
 

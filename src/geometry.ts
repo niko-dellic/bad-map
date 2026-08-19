@@ -156,6 +156,21 @@ export function reprojectPoint(
   ];
 }
 
+/** Converts a CSS-pixel position in a raster frame to Web Mercator world coordinates. */
+export function framePointToWorld(state: RasterViewState, point: Point): Point {
+  const [centerX, centerY] = lngLatToWorld(state.center.lng, state.center.lat);
+  const screenX = point[0] - state.width / 2;
+  const screenY = point[1] - state.height / 2;
+  const angle = (state.bearing * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const worldSize = 512 * 2 ** state.zoom;
+  return [
+    centerX + (cos * screenX - sin * screenY) / worldSize,
+    centerY + (sin * screenX + cos * screenY) / worldSize,
+  ];
+}
+
 // Tile z is encoded separately because x/y alone cannot recover it. Keeping
 // this function free-standing makes worker projection cheap and testable.
 export function projectTilePoint(

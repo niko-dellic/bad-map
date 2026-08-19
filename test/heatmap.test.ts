@@ -53,24 +53,25 @@ describe("low-resolution heatmaps", () => {
     ).toEqual(new Uint8Array(40));
   });
 
-  it("validates compact data and applies greyscale to the heatmap palette", () => {
+  it("validates compact data and keeps its palette outside basemap greyscale", () => {
+    const palette = [
+      [0, 20, 80],
+      [0, 120, 200],
+      [240, 180, 20],
+      [240, 40, 40],
+    ] as const;
     const basemap = new LowResBasemap({
       heatmap: {
         data: [[0, 0, 2]],
         visible: true,
-        palette: [
-          [0, 20, 80],
-          [0, 120, 200],
-          [240, 180, 20],
-          [240, 40, 40],
-        ],
+        palette,
       },
     });
     const options = basemap.getHeatmapOptions();
     expect(options.pointCount).toBe(1);
-    expect(options.palette?.every(([r, g, b]) => r === g && g === b)).toBe(
-      true,
-    );
+    expect(options.palette).toEqual(palette);
+    basemap.setColorMode("color");
+    expect(basemap.getHeatmapOptions().palette).toEqual(palette);
     expect(() => basemap.setHeatmapData(new Float32Array([0, 0]))).toThrow(
       /triplets/,
     );

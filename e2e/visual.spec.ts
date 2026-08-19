@@ -206,7 +206,6 @@ test("matches the low-resolution pickup heatmap baseline", async ({ page }) => {
     ).__badMapDemo;
     return demo.diagnostics.lastGeneration;
   });
-  await page.locator("#color-mode").click();
   await page.locator("#heatmap-mode").selectOption("lowres");
   await expect(page.locator("#heatmap-status")).toContainText(
     "weighted pickups · lowres",

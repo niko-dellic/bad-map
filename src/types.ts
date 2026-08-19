@@ -52,6 +52,13 @@ export interface LowResCameraOptions {
   maxPitch?: number;
 }
 
+export interface LowResLabelsOptions {
+  /** Whether labels are shown. */
+  visible?: boolean;
+  /** Keep labels aligned to the viewport in surface mode. Defaults to true. */
+  billboard?: boolean;
+}
+
 export interface LowResBuildings3DOptions {
   /** Whether extruded buildings are shown. They are only visible in surface mode. */
   visible?: boolean;
@@ -82,7 +89,7 @@ export interface LowResHeatmapOptions {
   /** Stable upper density bound. Zero selects the current view maximum. */
   maxDensity?: number;
   opacity?: number;
-  /** Four colors sampled from low to high density. */
+  /** Four colors sampled from low to high density. Basemap greyscale does not modify them. */
   palette?: readonly [RGB, RGB, RGB, RGB];
 }
 
@@ -149,7 +156,7 @@ export interface LowResBasemapOptions {
   sources?: Record<string, LowResSource>;
   layers?: LowResLayerPackDescriptor[];
   theme?: BuiltinThemeName | LowResTheme;
-  /** Palette composition mode. It only affects layers owned by this package. */
+  /** Basemap cartography mode. Visualization and data palettes remain unchanged. */
   colorMode?: LowResColorMode;
   projectionMode?: LowResProjectionMode;
   camera?: LowResCameraOptions;
@@ -159,7 +166,8 @@ export interface LowResBasemapOptions {
   heatmap?: LowResHeatmapOptions;
   cell?: Partial<CellGeometry>;
   locale?: string;
-  labels?: boolean;
+  /** Label visibility shorthand, or detailed label rendering options. */
+  labels?: boolean | LowResLabelsOptions;
   attribution?: boolean;
   enforceNorthUp?: boolean;
   maxCachedTiles?: number;

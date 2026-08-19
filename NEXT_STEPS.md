@@ -20,7 +20,7 @@ geometry, independent labels, typed nonfatal failures, and public MapLibre APIs.
 | 4. Numeric and time-aware data | Foundation complete | Quantized scalar texture, weather and elevation defaults, `{time}` tile templates, runtime time updates, and time-keyed caches                                    |
 | 5. Visualization and picking   | Complete            | Data, marker, label, and interaction boundaries; owner-texture hover; persistent selection; pack/source-aware queries; filter helper                              |
 | 6. Rotation and 3D             | Experimental        | Bearing-aware screen mode, camera-footprint-fitted world surface, geographic picking, and optional theme-aware native building extrusions                         |
-| 7. Point-density heatmaps      | Foundation complete | Native comparison plus weighted worker kernels, stable domains, compact density buffers, square-dot dithering, runtime controls, and greyscale                    |
+| 7. Point-density heatmaps      | Foundation complete | Native comparison plus weighted worker kernels, stable domains, compact density buffers, a dedicated data compositor, square-dot dithering, and runtime controls  |
 
 The demo exposes the implemented appearance, lattice, camera, pack, heatmap,
 source, and time options in a scrollable side panel. Greyscale is on by default.
@@ -32,9 +32,11 @@ flowchart LR
   S["Named TileJSON sources"] --> W["Worker loaders and bounded caches"]
   W --> P["Serializable semantic packs"]
   P --> C["Categorical, scalar, density, owner, and label buffers"]
-  C --> B["Screen or surface compositor"]
-  B --> D["Application data and markers"]
-  D --> L["Labels and interaction"]
+  C --> B["Cartography compositor"]
+  C --> D["Transparent data compositor"]
+  B --> D
+  D --> M["Application data and markers"]
+  M --> L["Labels and interaction"]
 ```
 
 ### Semantic packs
@@ -65,9 +67,11 @@ The public ordering contract is:
 bad-map-base → bad-map-buildings-3d → bad-map-data → bad-map-markers → bad-map-labels → bad-map-interaction
 ```
 
-The middle IDs are no-op custom layers used as stable insertion boundaries.
-Native MapLibre and interleaved deck.gl layers remain untouched by theme and
-greyscale composition.
+`bad-map-data` is a transparent compositor for package-owned scalar and density
+textures. It is the shared extension boundary for future low-resolution data
+effects. The marker and interaction IDs remain no-op insertion boundaries.
+Native MapLibre, interleaved deck.gl, and compositor data palettes remain
+untouched by basemap theme and greyscale composition.
 
 ### Camera modes
 
@@ -166,7 +170,8 @@ Every production-depth addition should include:
   sampled.
 - Feature and pack ranks are deterministic regardless of response order.
 - Labels remain independently composed above consumer data.
-- Greyscale affects package-owned cartography only.
+- Greyscale affects package-owned cartography and labels only, never data
+  visualization palettes.
 - Worker configuration remains serializable.
 - Missing sources and tiles degrade locally and emit typed nonfatal errors.
 - Screen-space and surface-space rendering remain explicit modes.
