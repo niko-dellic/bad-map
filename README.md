@@ -258,6 +258,16 @@ of pitch. Fog defaults to enabled in the dithered style. Set `fog: false` or
 select disabled in the demo to turn it off. In the demo, fog is controlled
 exclusively from Display → Atmosphere in the side pane.
 
+The demo also adds its own dithered screen-space vignette above the map. This
+overlay is not exported by the package. Its side-pane controls adjust how far
+the fade reaches into the viewport, morph its shape from the viewport aspect
+ratio toward a true circle, select gradual, smooth, or edge-weighted falloff,
+and tune opacity. The default gradual falloff combines a 64-level 8×8 ordered
+pattern with an alpha ramp to avoid a visible density ring. It reaches 100%
+opacity at the viewport edge. Its dither color follows the composed theme
+ground by default, or can be replaced with an explicit color that remains
+unchanged across theme and greyscale updates.
+
 ```ts
 const basemap = new LowResBasemap({
   fog: {

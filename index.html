@@ -17,6 +17,7 @@
         id="map"
         aria-label="Interactive low-resolution map of New York City"
       ></div>
+      <canvas id="screen-vignette" aria-hidden="true"></canvas>
       <div id="top-bar">
         <header>
           <strong>bad-map</strong>
@@ -252,6 +253,71 @@
               >
               <output id="fog-status" class="section-status" aria-live="polite"
                 >dithered · 55–95% viewport depth · theme color</output
+              >
+            </section>
+
+            <section>
+              <h2>Screen vignette</h2>
+              <label class="check"
+                ><input id="vignette-enabled" type="checkbox" checked />
+                Enabled</label
+              >
+              <label
+                >Edge reach <output id="vignette-reach-value">32%</output
+                ><input
+                  id="vignette-reach"
+                  type="range"
+                  min="0.05"
+                  max="0.5"
+                  step="0.01"
+                  value="0.32"
+              /></label>
+              <label
+                >Falloff
+                <select id="vignette-falloff">
+                  <option value="linear" selected>gradual</option>
+                  <option value="smooth">smooth S-curve</option>
+                  <option value="edge">edge weighted</option>
+                </select></label
+              >
+              <label
+                >Circularity <output id="vignette-circularity-value">35%</output
+                ><input
+                  id="vignette-circularity"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value="0.35"
+              /></label>
+              <label
+                >Opacity <output id="vignette-opacity-value">100%</output
+                ><input
+                  id="vignette-opacity"
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.01"
+                  value="1"
+              /></label>
+              <label for="vignette-color"
+                >Dither color
+                <input
+                  id="vignette-color"
+                  type="color"
+                  value="#0f0f0f"
+                  aria-label="Vignette dither color"
+              /></label>
+              <label class="check"
+                ><input id="vignette-theme-color" type="checkbox" checked />
+                Follow theme</label
+              >
+              <output
+                id="vignette-status"
+                class="section-status"
+                aria-live="polite"
+                >gradual · 8×8 CSS-pixel dither · theme color ·
+                demo-only</output
               >
             </section>
 

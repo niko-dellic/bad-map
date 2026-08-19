@@ -1,6 +1,6 @@
 :root {
   --settings-width: 268px;
-  --settings-collapsed-width: 42px;
+  --settings-collapsed-width: var(--ui-control-size);
   --ui-control-size: 30px;
   --ui-font-size: 11px;
   --ui-icon-size: 15px;
@@ -23,6 +23,16 @@ body,
 }
 body {
   overflow: hidden;
+}
+
+#screen-vignette {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  image-rendering: pixelated;
 }
 
 #map.is-querying .maplibregl-canvas {
@@ -80,7 +90,8 @@ header span,
 #place-search {
   z-index: 7;
   width: min(440px, max(220px, calc(100vw - var(--settings-width) - 280px)));
-  padding: 8px;
+  padding: 0;
+  border-top: 0;
 }
 
 #place-search.is-collapsed {
@@ -104,6 +115,7 @@ header span,
 .place-search-field {
   display: flex;
   gap: 6px;
+  margin-inline: -1px;
 }
 
 #place-search-input {
@@ -137,7 +149,7 @@ header span,
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 1px 0;
+  padding: 6px 9px 8px;
   color: #737988;
   font-size: 9px;
 }
@@ -148,11 +160,13 @@ header span,
 
 #place-search-results {
   max-height: min(352px, calc(100vh - 180px));
-  margin: 8px -8px -8px;
+  margin: 0;
   padding: 0;
   overflow-y: auto;
   border-top: 1px solid #343740;
   list-style: none;
+  scrollbar-color: rgb(86 91 103 / 78%) transparent;
+  scrollbar-width: thin;
 }
 
 #place-search-results li + li {
@@ -201,7 +215,6 @@ header span,
   max-width: min(480px, calc(100vw - 28px));
   flex-direction: column;
   overflow: visible;
-  scrollbar-width: thin;
 }
 
 .panel-chrome {
@@ -281,7 +294,46 @@ header span,
   flex: 1;
   overflow-y: auto;
   padding: 0 10px 10px;
+  scrollbar-color: rgb(86 91 103 / 78%) transparent;
   scrollbar-width: thin;
+}
+
+.panel-scroll::-webkit-scrollbar,
+#place-search-results::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.panel-scroll::-webkit-scrollbar-track,
+.panel-scroll::-webkit-scrollbar-track-piece,
+#place-search-results::-webkit-scrollbar-track,
+#place-search-results::-webkit-scrollbar-track-piece {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.panel-scroll::-webkit-scrollbar-thumb,
+#place-search-results::-webkit-scrollbar-thumb {
+  min-height: 36px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgb(86 91 103 / 78%);
+  background-clip: padding-box;
+}
+
+.panel-scroll::-webkit-scrollbar-thumb:hover,
+#place-search-results::-webkit-scrollbar-thumb:hover {
+  background: rgb(126 132 146 / 92%);
+  background-clip: padding-box;
+}
+
+.panel-scroll::-webkit-scrollbar-button,
+.panel-scroll::-webkit-scrollbar-corner,
+#place-search-results::-webkit-scrollbar-button,
+#place-search-results::-webkit-scrollbar-corner {
+  display: none;
+  background: transparent;
 }
 
 .tab-panel[hidden] {
@@ -326,11 +378,12 @@ body.is-resizing {
   width: var(--settings-collapsed-width);
   min-width: var(--settings-collapsed-width);
   overflow: hidden;
+  border: 0;
 }
 
 #settings.is-collapsed .panel-toolbar {
   justify-content: center;
-  padding: 5px;
+  padding: 0;
 }
 
 #settings.is-collapsed .panel-tabs,

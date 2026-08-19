@@ -41,6 +41,9 @@ const prepareVisualPage = async (page: import("@playwright/test").Page) => {
   );
   await page.goto("/");
   await expect(page.locator("#status")).toContainText("rendered in");
+  await page.locator("#screen-vignette").evaluate((element) => {
+    element.style.display = "none";
+  });
   await expect(page.locator("#trips-status")).toContainText("2 animated trips");
   await page.evaluate(() =>
     (
@@ -55,6 +58,21 @@ const prepareVisualPage = async (page: import("@playwright/test").Page) => {
     }),
   );
 };
+
+test("matches the demo-only dithered screen vignette", async ({ page }) => {
+  await prepareVisualPage(page);
+  await page.evaluate(() => {
+    for (const element of document.querySelectorAll<HTMLElement>(
+      "#top-bar, aside, #readout, nav, .maplibregl-control-container",
+    ))
+      element.style.display = "none";
+    const vignette = document.querySelector<HTMLElement>("#screen-vignette")!;
+    vignette.style.display = "block";
+  });
+  await expect(page).toHaveScreenshot("nyc-screen-vignette.png", {
+    animations: "disabled",
+  });
+});
 
 test("matches settled city, theme, and greyscale baselines", async ({
   page,

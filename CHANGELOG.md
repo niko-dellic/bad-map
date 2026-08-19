@@ -18,6 +18,10 @@
   maps, with disabled/regular/dithered demo controls, screen-space start/end
   tuning, custom or theme-derived color, side-pane controls, runtime controls,
   theme-aware defaults, and dithered fog enabled by default.
+- A demo-only, CSS-pixel-dithered screen vignette with configurable edge reach,
+  circularity, opacity, visibility, and optical falloff curves. Its default
+  8×8 gradual pattern reduces visible density banding, reaches full opacity,
+  and supports theme-following or custom dither colors.
 
 ### Changed
 

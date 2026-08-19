@@ -19,6 +19,12 @@ import {
   type LowResTrip,
   type RGB,
 } from "../src";
+import {
+  DEFAULT_SCREEN_VIGNETTE,
+  drawScreenVignette,
+  type ScreenVignetteFalloff,
+  type ScreenVignetteOptions,
+} from "./vignette";
 import "./style.css";
 
 const map = new Map({
@@ -95,6 +101,83 @@ const tabButtons = Array.from(
 const tabPanels = Array.from(
   document.querySelectorAll<HTMLElement>(".tab-panel"),
 );
+const vignetteCanvas =
+  document.querySelector<HTMLCanvasElement>("#screen-vignette")!;
+const vignetteEnabled =
+  document.querySelector<HTMLInputElement>("#vignette-enabled")!;
+const vignetteReach =
+  document.querySelector<HTMLInputElement>("#vignette-reach")!;
+const vignetteCircularity = document.querySelector<HTMLInputElement>(
+  "#vignette-circularity",
+)!;
+const vignetteOpacity =
+  document.querySelector<HTMLInputElement>("#vignette-opacity")!;
+const vignetteFalloff =
+  document.querySelector<HTMLSelectElement>("#vignette-falloff")!;
+const vignetteColor =
+  document.querySelector<HTMLInputElement>("#vignette-color")!;
+const vignetteThemeColor = document.querySelector<HTMLInputElement>(
+  "#vignette-theme-color",
+)!;
+const vignetteStatus =
+  document.querySelector<HTMLOutputElement>("#vignette-status")!;
+let themeVignetteColor: RGB = [...DEFAULT_SCREEN_VIGNETTE.color] as RGB;
+const vignetteRgbToHex = (color: RGB) =>
+  `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+const vignetteHexToRgb = (color: string): RGB => [
+  Number.parseInt(color.slice(1, 3), 16),
+  Number.parseInt(color.slice(3, 5), 16),
+  Number.parseInt(color.slice(5, 7), 16),
+];
+vignetteEnabled.checked = DEFAULT_SCREEN_VIGNETTE.enabled;
+vignetteReach.value = String(DEFAULT_SCREEN_VIGNETTE.reach);
+vignetteCircularity.value = String(DEFAULT_SCREEN_VIGNETTE.circularity);
+vignetteOpacity.value = String(DEFAULT_SCREEN_VIGNETTE.opacity);
+vignetteFalloff.value = DEFAULT_SCREEN_VIGNETTE.falloff;
+vignetteColor.value = vignetteRgbToHex(themeVignetteColor);
+let vignetteFrame = 0;
+const currentVignetteOptions = (): ScreenVignetteOptions => ({
+  enabled: vignetteEnabled.checked,
+  reach: Number(vignetteReach.value),
+  circularity: Number(vignetteCircularity.value),
+  opacity: Number(vignetteOpacity.value),
+  falloff: vignetteFalloff.value as ScreenVignetteFalloff,
+  color: vignetteThemeColor.checked
+    ? themeVignetteColor
+    : vignetteHexToRgb(vignetteColor.value),
+});
+const renderVignette = () => {
+  cancelAnimationFrame(vignetteFrame);
+  vignetteFrame = requestAnimationFrame(() => {
+    const options = currentVignetteOptions();
+    document.querySelector("#vignette-reach-value")!.textContent =
+      `${Math.round(options.reach * 100)}%`;
+    document.querySelector("#vignette-circularity-value")!.textContent =
+      `${Math.round(options.circularity * 100)}%`;
+    document.querySelector("#vignette-opacity-value")!.textContent =
+      `${Math.round(options.opacity * 100)}%`;
+    vignetteStatus.textContent = options.enabled
+      ? `${vignetteFalloff.selectedOptions[0]?.textContent ?? "gradual"} · 8×8 CSS-pixel dither · ${vignetteThemeColor.checked ? "theme color" : vignetteColor.value} · demo-only`
+      : "demo overlay disabled";
+    drawScreenVignette(vignetteCanvas, options);
+  });
+};
+vignetteEnabled.onchange = renderVignette;
+vignetteReach.oninput = renderVignette;
+vignetteCircularity.oninput = renderVignette;
+vignetteOpacity.oninput = renderVignette;
+vignetteFalloff.onchange = renderVignette;
+vignetteColor.oninput = () => {
+  vignetteThemeColor.checked = false;
+  renderVignette();
+};
+vignetteThemeColor.onchange = () => {
+  if (vignetteThemeColor.checked)
+    vignetteColor.value = vignetteRgbToHex(themeVignetteColor);
+  renderVignette();
+};
+window.addEventListener("resize", renderVignette);
+renderVignette();
 
 const activateTab = (tab: string, focus = false) => {
   for (const button of tabButtons) {
@@ -671,6 +754,10 @@ basemap.on("fogchange", ({ color }) => {
 });
 basemap.on("stylechange", ({ theme }) => {
   themeFogColor = theme.fills.ground;
+  themeVignetteColor = theme.fills.ground;
+  if (vignetteThemeColor.checked)
+    vignetteColor.value = vignetteRgbToHex(themeVignetteColor);
+  renderVignette();
   syncFogControls();
 });
 const updateCameraLabels = () => {

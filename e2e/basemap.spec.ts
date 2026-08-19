@@ -352,6 +352,21 @@ test("debounces OSM place lookup and selects a result", async ({ page }) => {
   await toggle.click();
   await expect(input).toBeVisible();
   await expect(input).toBeFocused();
+  const [expandedSearchBox, inputBox, expandedHeaderBox] = await Promise.all([
+    page.locator("#place-search").boundingBox(),
+    input.boundingBox(),
+    page.locator("header").boundingBox(),
+  ]);
+  expect(expandedSearchBox).not.toBeNull();
+  expect(inputBox).not.toBeNull();
+  expect(expandedHeaderBox).not.toBeNull();
+  expect(inputBox!.x).toBe(expandedSearchBox!.x);
+  expect(inputBox!.x + inputBox!.width).toBe(
+    expandedSearchBox!.x + expandedSearchBox!.width,
+  );
+  expect(inputBox!.y).toBe(expandedSearchBox!.y);
+  expect(inputBox!.y).toBe(expandedHeaderBox!.y);
+  expect(inputBox!.height).toBe(expandedHeaderBox!.height);
   await input.fill("A");
   await page.waitForTimeout(450);
   expect(requestCount).toBe(0);
@@ -583,6 +598,83 @@ test("configures fog from the side pane without worker rasterization", async ({
   await page.locator("#projection").selectOption("surface");
   await expect(mode).toHaveValue("regular");
   await expect(page.locator("#fog-status")).toContainText("regular");
+});
+
+test("configures the demo-only dithered screen vignette", async ({ page }) => {
+  const canvas = page.locator("#screen-vignette");
+  const enabled = page.locator("#vignette-enabled");
+  const color = page.locator("#vignette-color");
+  const themeColor = page.locator("#vignette-theme-color");
+  await expect(enabled).toBeChecked();
+  await expect(page.locator("#vignette-reach")).toHaveValue("0.32");
+  await expect(page.locator("#vignette-falloff")).toHaveValue("linear");
+  await expect(page.locator("#vignette-circularity")).toHaveValue("0.35");
+  await expect(page.locator("#vignette-opacity")).toHaveValue("1");
+  await expect(page.locator("#vignette-opacity-value")).toHaveText("100%");
+  await expect(color).toHaveValue("#0f0f0f");
+  await expect(themeColor).toBeChecked();
+  await expect(page.locator("#vignette-status")).toHaveText(
+    "gradual · 8×8 CSS-pixel dither · theme color · demo-only",
+  );
+
+  await expect
+    .poll(() =>
+      canvas.evaluate((element: HTMLCanvasElement) => {
+        const context = element.getContext("2d")!;
+        const corner = context.getImageData(0, 0, 1, 1).data[3]!;
+        const center = context.getImageData(
+          Math.floor(element.width / 2),
+          Math.floor(element.height / 2),
+          1,
+          1,
+        ).data[3]!;
+        return { corner, center, width: element.width, height: element.height };
+      }),
+    )
+    .toMatchObject({ corner: 255, center: 0, width: 960, height: 640 });
+
+  const before = await diagnostics(page);
+  await page.locator("#vignette-reach").fill("0.34");
+  await page.locator("#vignette-falloff").selectOption("edge");
+  await page.locator("#vignette-circularity").fill("0.8");
+  await page.locator("#vignette-opacity").fill("0.6");
+  await color.fill("#5c6f91");
+  await expect(themeColor).not.toBeChecked();
+  await expect(page.locator("#vignette-reach-value")).toHaveText("34%");
+  await expect(page.locator("#vignette-circularity-value")).toHaveText("80%");
+  await expect(page.locator("#vignette-opacity-value")).toHaveText("60%");
+  await expect(page.locator("#vignette-status")).toContainText("edge weighted");
+  await expect(page.locator("#vignette-status")).toContainText("#5c6f91");
+  await expect
+    .poll(() =>
+      canvas.evaluate(
+        (element: HTMLCanvasElement) =>
+          element.getContext("2d")!.getImageData(0, 0, 1, 1).data[3],
+      ),
+    )
+    .toBe(153);
+  const customPixel = await canvas.evaluate((element: HTMLCanvasElement) =>
+    Array.from(element.getContext("2d")!.getImageData(0, 0, 1, 1).data),
+  );
+  expect(Math.abs(customPixel[0]! - 92)).toBeLessThanOrEqual(1);
+  expect(Math.abs(customPixel[1]! - 111)).toBeLessThanOrEqual(1);
+  expect(Math.abs(customPixel[2]! - 145)).toBeLessThanOrEqual(1);
+  await page.waitForTimeout(100);
+  const after = await diagnostics(page);
+  expect(after.renderEvents).toBe(before.renderEvents);
+  expect(after.lastGeneration).toBe(before.lastGeneration);
+
+  await page.locator("#theme").selectOption("light");
+  await expect(color).toHaveValue("#5c6f91");
+  await themeColor.check();
+  await expect(color).not.toHaveValue("#5c6f91");
+  await expect(page.locator("#vignette-status")).toContainText("theme color");
+
+  await enabled.uncheck();
+  await expect(canvas).toBeHidden();
+  await expect(page.locator("#vignette-status")).toHaveText(
+    "demo overlay disabled",
+  );
 });
 
 test("exposes stable slots and switches between bearing and surface cameras", async ({
@@ -1240,6 +1332,14 @@ test("collapses the settings panel without hiding hover information", async ({
   await expect(settings.locator("section").first()).toBeHidden();
   await expect(page.locator("#settings-toggle i")).toBeVisible();
   await expect(readout).toBeVisible();
+
+  const [collapsedSettingsBox, settingsToggleBox] = await Promise.all([
+    settings.boundingBox(),
+    page.locator("#settings-toggle").boundingBox(),
+  ]);
+  expect(collapsedSettingsBox).not.toBeNull();
+  expect(settingsToggleBox).not.toBeNull();
+  expect(collapsedSettingsBox).toEqual(settingsToggleBox);
 
   await page.locator("#settings-toggle").click();
   await expect(settings).not.toHaveClass(/is-collapsed/);
