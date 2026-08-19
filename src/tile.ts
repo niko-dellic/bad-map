@@ -1,11 +1,11 @@
 import { VectorTile } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
-import type { TileKey } from "./geometry";
+import type { TileKey } from "./geometry.js";
 import type {
   LowResError,
   LowResLayerPackDescriptor,
   LowResSource,
-} from "./types";
+} from "./types.js";
 
 export type GeometryPoint = readonly [number, number];
 

@@ -11,14 +11,31 @@ describe("demo screen vignette", () => {
     expect(screenVignetteAmount(100, 0, 200, 100, 0.2, 0)).toBeCloseTo(1);
   });
 
-  it("morphs from the viewport ratio toward a true circle", () => {
-    const ellipse = screenVignetteAmount(20, 50, 200, 100, 0.25, 0);
+  it("applies a rectangle base evenly at edge midpoints and corners", () => {
+    const midpoint = screenVignetteAmount(100, 10, 200, 100, 0.4, 0);
+    const corner = screenVignetteAmount(20, 10, 200, 100, 0.4, 0);
+    const ovalCorner = screenVignetteAmount(
+      20,
+      10,
+      200,
+      100,
+      0.4,
+      0,
+      "linear",
+      "oval",
+    );
+    expect(corner).toBe(midpoint);
+    expect(ovalCorner).toBeGreaterThan(corner);
+  });
+
+  it("morphs either base shape toward a true circle", () => {
+    const rectangle = screenVignetteAmount(20, 50, 200, 100, 0.25, 0);
     const circle = screenVignetteAmount(20, 50, 200, 100, 0.25, 1);
-    expect(circle).toBeGreaterThan(ellipse);
+    expect(circle).toBeGreaterThan(rectangle);
     expect(circle).toBe(1);
   });
 
-  it("supports gradual, smooth, and edge-weighted falloff curves", () => {
+  it("supports linear, smooth, and edge-weighted falloff curves", () => {
     expect(screenVignetteFalloff(0.25, "linear")).toBe(0.25);
     expect(screenVignetteFalloff(0.25, "smooth")).toBe(0.15625);
     expect(screenVignetteFalloff(0.25, "edge")).toBe(0.0625);

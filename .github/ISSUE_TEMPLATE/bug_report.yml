@@ -1,0 +1,41 @@
+name: Bug report
+description: Report a reproducible defect in bad-map
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please do not report security vulnerabilities here; use SECURITY.md.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Link to or paste the smallest reproducible example and data.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: bad-map, MapLibre, browser, and operating-system versions
+    validations:
+      required: true
+  - type: dropdown
+    id: projection
+    attributes:
+      label: Projection mode
+      options: [surface, screen, both, unknown]
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Console errors, screenshots, options, and relevant source details

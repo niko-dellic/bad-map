@@ -22,6 +22,7 @@ import {
 import {
   DEFAULT_SCREEN_VIGNETTE,
   drawScreenVignette,
+  type ScreenVignetteBase,
   type ScreenVignetteFalloff,
   type ScreenVignetteOptions,
 } from "./vignette";
@@ -114,6 +115,8 @@ const vignetteOpacity =
   document.querySelector<HTMLInputElement>("#vignette-opacity")!;
 const vignetteFalloff =
   document.querySelector<HTMLSelectElement>("#vignette-falloff")!;
+const vignetteBase =
+  document.querySelector<HTMLSelectElement>("#vignette-base")!;
 const vignetteColor =
   document.querySelector<HTMLInputElement>("#vignette-color")!;
 const vignetteThemeColor = document.querySelector<HTMLInputElement>(
@@ -134,11 +137,13 @@ vignetteReach.value = String(DEFAULT_SCREEN_VIGNETTE.reach);
 vignetteCircularity.value = String(DEFAULT_SCREEN_VIGNETTE.circularity);
 vignetteOpacity.value = String(DEFAULT_SCREEN_VIGNETTE.opacity);
 vignetteFalloff.value = DEFAULT_SCREEN_VIGNETTE.falloff;
+vignetteBase.value = DEFAULT_SCREEN_VIGNETTE.base;
 vignetteColor.value = vignetteRgbToHex(themeVignetteColor);
 let vignetteFrame = 0;
 const currentVignetteOptions = (): ScreenVignetteOptions => ({
   enabled: vignetteEnabled.checked,
   reach: Number(vignetteReach.value),
+  base: vignetteBase.value as ScreenVignetteBase,
   circularity: Number(vignetteCircularity.value),
   opacity: Number(vignetteOpacity.value),
   falloff: vignetteFalloff.value as ScreenVignetteFalloff,
@@ -157,7 +162,7 @@ const renderVignette = () => {
     document.querySelector("#vignette-opacity-value")!.textContent =
       `${Math.round(options.opacity * 100)}%`;
     vignetteStatus.textContent = options.enabled
-      ? `${vignetteFalloff.selectedOptions[0]?.textContent ?? "gradual"} · 8×8 CSS-pixel dither · ${vignetteThemeColor.checked ? "theme color" : vignetteColor.value} · demo-only`
+      ? `${vignetteFalloff.selectedOptions[0]?.textContent ?? "linear"} · ${vignetteBase.value} base · 8×8 CSS-pixel dither · ${vignetteThemeColor.checked ? "theme color" : vignetteColor.value} · demo-only`
       : "demo overlay disabled";
     drawScreenVignette(vignetteCanvas, options);
   });
@@ -167,6 +172,7 @@ vignetteReach.oninput = renderVignette;
 vignetteCircularity.oninput = renderVignette;
 vignetteOpacity.oninput = renderVignette;
 vignetteFalloff.onchange = renderVignette;
+vignetteBase.onchange = renderVignette;
 vignetteColor.oninput = () => {
   vignetteThemeColor.checked = false;
   renderVignette();

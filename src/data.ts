@@ -1,6 +1,6 @@
 import type { Feature, GeoJsonProperties, Geometry, Position } from "geojson";
-import { bresenham, lngLatToWorld } from "./geometry";
-import { rasterizeHeatmap } from "./heatmap";
+import { bresenham, lngLatToWorld } from "./geometry.js";
+import { rasterizeHeatmap } from "./heatmap.js";
 import type {
   DataRasterFrame,
   LowResDataAccessor,
@@ -11,7 +11,7 @@ import type {
   LowResWaypointStyle,
   RGB,
   RasterViewState,
-} from "./types";
+} from "./types.js";
 
 type RGBA = readonly [number, number, number, number];
 

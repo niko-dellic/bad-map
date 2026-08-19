@@ -1,5 +1,5 @@
-import type { SerializedDataLayer } from "../data";
-import type { DataRasterFrame, RasterViewState } from "../types";
+import type { SerializedDataLayer } from "../data.js";
+import type { DataRasterFrame, RasterViewState } from "../types.js";
 
 export type DataWorkerRequest =
   | { type: "set-layers"; layers: SerializedDataLayer[] }

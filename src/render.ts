@@ -7,15 +7,15 @@ import {
   framePointToWorld,
   lngLatToWorld,
   reprojectionTransform,
-} from "./geometry";
-import { FillClass, LabelInk, LineClass } from "./style";
+} from "./geometry.js";
+import { FillClass, LabelInk, LineClass } from "./style.js";
 import type {
   DataRasterFrame,
   LowResFogMode,
   LowResTheme,
   RGB,
   RasterFrame,
-} from "./types";
+} from "./types.js";
 
 interface FogRenderState {
   visible: boolean;

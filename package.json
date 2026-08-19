@@ -2,34 +2,55 @@
   "name": "bad-map",
   "version": "0.9.0",
   "description": "A semantic low-resolution Braille basemap for MapLibre GL JS",
+  "author": "niko-dellic",
   "type": "module",
   "sideEffects": false,
   "files": [
     "CHANGELOG.md",
     "dist",
     "LICENSE",
-    "NEXT_STEPS.md",
-    "README.md"
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "main": "./dist/bad-map.js",
   "module": "./dist/bad-map.js",
+  "browser": "./dist/bad-map.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/bad-map.js"
+      "import": "./dist/bad-map.js",
+      "default": "./dist/bad-map.js"
     }
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/niko-dellic/bad-map.git"
+  },
+  "homepage": "https://github.com/niko-dellic/bad-map#readme",
+  "bugs": {
+    "url": "https://github.com/niko-dellic/bad-map/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json",
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && vite build && node scripts/prune-dist.mjs && tsc -p tsconfig.build.json",
     "api:check": "npm run build && node scripts/check-api.mjs",
     "dev": "vite --host 127.0.0.1",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:functional": "playwright test e2e/basemap.spec.ts",
+    "test:package": "npm run build && node scripts/test-package.mjs",
     "test:all": "npm test && npm run test:e2e",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "verify": "npm run format:check && npm run typecheck && npm test && npm run build && node scripts/check-api.mjs && node scripts/test-package.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run verify"
   },
   "keywords": [
     "maplibre",
@@ -40,18 +61,18 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@mapbox/vector-tile": "^3.0.0",
-    "@types/geojson": "^7946.0.16",
-    "pbf": "^5.1.2"
+    "@types/geojson": "^7946.0.16"
   },
   "peerDependencies": {
     "maplibre-gl": ">=5.0.0 <7"
   },
   "devDependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
     "@phosphor-icons/web": "^2.1.2",
     "@playwright/test": "^1.62.1",
     "@types/node": "^24.0.0",
     "maplibre-gl": "^5.24.0",
+    "pbf": "^5.1.2",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",
     "vite": "^7.1.3",

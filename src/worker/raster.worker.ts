@@ -1,19 +1,19 @@
 /// <reference lib="webworker" />
 
-import { visibleTiles } from "../geometry";
-import { rasterizeHeatmap, type HeatmapRasterOptions } from "../heatmap";
-import { featureBelongsToPack } from "../packs";
-import { rasterizeView } from "../rasterize";
-import { bandFor, effectiveStyleZoom, sourceZoom } from "../style";
-import { TileLoader } from "../tile";
-import type { DecodedFeature } from "../tile";
+import { visibleTiles } from "../geometry.js";
+import { rasterizeHeatmap, type HeatmapRasterOptions } from "../heatmap.js";
+import { featureBelongsToPack } from "../packs.js";
+import { rasterizeView } from "../rasterize.js";
+import { bandFor, effectiveStyleZoom, sourceZoom } from "../style.js";
+import { TileLoader } from "../tile.js";
+import type { DecodedFeature } from "../tile.js";
 import type {
   LowResError,
   LowResLayerPackDescriptor,
   RasterViewState,
-} from "../types";
-import type { WorkerRequest, WorkerResponse } from "./protocol";
-import { frameTransferables } from "./protocol";
+} from "../types.js";
+import type { WorkerRequest, WorkerResponse } from "./protocol.js";
+import { frameTransferables } from "./protocol.js";
 
 let loaders = new Map<string, TileLoader>();
 let layers: LowResLayerPackDescriptor[] = [];

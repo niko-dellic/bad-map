@@ -3,7 +3,7 @@ import type {
   LowResColorMode,
   LowResTheme,
   RGB,
-} from "./types";
+} from "./types.js";
 
 export const DARK_THEME: LowResTheme = {
   name: "dark",

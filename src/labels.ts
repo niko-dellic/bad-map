@@ -1,7 +1,7 @@
-import { cellPath, type Point } from "./geometry";
-import { localizedName, type ProjectedFeature } from "./model";
-import { LabelInk, LINE_STYLES, ROAD_CLASS } from "./style";
-import type { LabelPlacement } from "./types";
+import { cellPath, type Point } from "./geometry.js";
+import { localizedName, type ProjectedFeature } from "./model.js";
+import { LabelInk, LINE_STYLES, ROAD_CLASS } from "./style.js";
+import type { LabelPlacement } from "./types.js";
 
 class Occupancy {
   readonly grid: Uint8Array;

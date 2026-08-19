@@ -1,5 +1,5 @@
-import { lngLatToWorld } from "./geometry";
-import type { RasterViewState } from "./types";
+import { lngLatToWorld } from "./geometry.js";
+import type { RasterViewState } from "./types.js";
 
 export interface HeatmapRasterOptions {
   visible: boolean;

@@ -2,8 +2,8 @@ import type {
   BuiltinLayerAdapter,
   LowResFeature,
   LowResLayerPackDescriptor,
-} from "./types";
-import type { DecodedFeature } from "./tile";
+} from "./types.js";
+import type { DecodedFeature } from "./tile.js";
 
 const LAYERS: Record<BuiltinLayerAdapter, string[]> = {
   streets: [

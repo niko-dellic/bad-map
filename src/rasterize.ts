@@ -6,9 +6,9 @@ import {
   gridSize,
   projectTilePoint,
   type Point,
-} from "./geometry";
-import { buildLabels } from "./labels";
-import { localizedName, type ProjectedFeature } from "./model";
+} from "./geometry.js";
+import { buildLabels } from "./labels.js";
+import { localizedName, type ProjectedFeature } from "./model.js";
 import {
   FillClass,
   LINE_STYLES,
@@ -18,14 +18,14 @@ import {
   fillClassFor,
   styleForLine,
   type StyleKey,
-} from "./style";
-import type { DecodedFeature } from "./tile";
+} from "./style.js";
+import type { DecodedFeature } from "./tile.js";
 import type {
   FeatureRecord,
   LowResError,
   RasterFrame,
   RasterViewState,
-} from "./types";
+} from "./types.js";
 
 interface ProjectedFill {
   feature: ProjectedFeature;

@@ -1,11 +1,14 @@
 export type ScreenVignetteFalloff = "linear" | "smooth" | "edge";
 export type ScreenVignetteColor = readonly [number, number, number];
+export type ScreenVignetteBase = "rectangle" | "oval";
 
 export interface ScreenVignetteOptions {
   enabled: boolean;
   /** Fraction of each radial axis occupied by the fade. */
   reach: number;
-  /** Zero follows the viewport aspect ratio; one is a true circle. */
+  /** Shape used when circularity is zero. */
+  base: ScreenVignetteBase;
+  /** Zero preserves the base shape; one is a true circle. */
   circularity: number;
   opacity: number;
   falloff: ScreenVignetteFalloff;
@@ -15,6 +18,7 @@ export interface ScreenVignetteOptions {
 export const DEFAULT_SCREEN_VIGNETTE: ScreenVignetteOptions = {
   enabled: true,
   reach: 0.32,
+  base: "rectangle",
   circularity: 0.35,
   opacity: 1,
   falloff: "linear",
@@ -55,17 +59,23 @@ export function screenVignetteAmount(
   reach: number,
   circularity: number,
   falloff: ScreenVignetteFalloff = "linear",
+  base: ScreenVignetteBase = "rectangle",
 ): number {
   if (width <= 0 || height <= 0) return 0;
   const halfWidth = width / 2;
   const halfHeight = height / 2;
   const radius = Math.min(halfWidth, halfHeight);
+  const offsetX = x - halfWidth;
+  const offsetY = y - halfHeight;
+  const normalizedX = Math.abs(offsetX / Math.max(1, halfWidth));
+  const normalizedY = Math.abs(offsetY / Math.max(1, halfHeight));
+  const baseDistance =
+    base === "rectangle"
+      ? Math.max(normalizedX, normalizedY)
+      : Math.hypot(normalizedX, normalizedY);
+  const circleDistance = Math.hypot(offsetX / radius, offsetY / radius);
   const shape = clamp(circularity, 0, 1);
-  const axisX = halfWidth + (radius - halfWidth) * shape;
-  const axisY = halfHeight + (radius - halfHeight) * shape;
-  const normalizedX = (x - halfWidth) / Math.max(1, axisX);
-  const normalizedY = (y - halfHeight) / Math.max(1, axisY);
-  const radialDistance = Math.hypot(normalizedX, normalizedY);
+  const radialDistance = baseDistance + (circleDistance - baseDistance) * shape;
   const fadeWidth = clamp(reach, 0.01, 0.99);
   const progress = clamp((radialDistance - (1 - fadeWidth)) / fadeWidth, 0, 1);
   return screenVignetteFalloff(progress, falloff);
@@ -90,24 +100,36 @@ export function drawScreenVignette(
   const [red, green, blue] = options.color.map((channel) =>
     Math.round(clamp(channel, 0, 255)),
   );
-  const xTerms = new Float32Array(width);
-  const yTerms = new Float32Array(height);
+  const xDistances = new Float32Array(width);
+  const yDistances = new Float32Array(height);
+  const circleXTerms = new Float32Array(width);
+  const circleYTerms = new Float32Array(height);
   const halfWidth = width / 2;
   const halfHeight = height / 2;
   const radius = Math.min(halfWidth, halfHeight);
-  const shape = clamp(options.circularity, 0, 1);
-  const axisX = Math.max(1, halfWidth + (radius - halfWidth) * shape);
-  const axisY = Math.max(1, halfHeight + (radius - halfHeight) * shape);
-  for (let x = 0; x < width; x += 1)
-    xTerms[x] = ((x + 0.5 - halfWidth) / axisX) ** 2;
-  for (let y = 0; y < height; y += 1)
-    yTerms[y] = ((y + 0.5 - halfHeight) / axisY) ** 2;
+  const circularity = clamp(options.circularity, 0, 1);
+  for (let x = 0; x < width; x += 1) {
+    const offset = x + 0.5 - halfWidth;
+    xDistances[x] = Math.abs(offset / Math.max(1, halfWidth));
+    circleXTerms[x] = (offset / radius) ** 2;
+  }
+  for (let y = 0; y < height; y += 1) {
+    const offset = y + 0.5 - halfHeight;
+    yDistances[y] = Math.abs(offset / Math.max(1, halfHeight));
+    circleYTerms[y] = (offset / radius) ** 2;
+  }
 
   const fadeWidth = clamp(options.reach, 0.01, 0.99);
   const fadeStart = 1 - fadeWidth;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      const radialDistance = Math.sqrt(xTerms[x]! + yTerms[y]!);
+      const baseDistance =
+        options.base === "rectangle"
+          ? Math.max(xDistances[x]!, yDistances[y]!)
+          : Math.hypot(xDistances[x]!, yDistances[y]!);
+      const circleDistance = Math.sqrt(circleXTerms[x]! + circleYTerms[y]!);
+      const radialDistance =
+        baseDistance + (circleDistance - baseDistance) * circularity;
       const progress = clamp((radialDistance - fadeStart) / fadeWidth, 0, 1);
       const amount = screenVignetteFalloff(progress, options.falloff);
       if (amount < screenVignetteBayerThreshold(x, y)) continue;
@@ -115,7 +137,7 @@ export function drawScreenVignette(
       image.data[offset] = red!;
       image.data[offset + 1] = green!;
       image.data[offset + 2] = blue!;
-      image.data[offset + 3] = Math.round(maximumAlpha * (0.2 + amount * 0.8));
+      image.data[offset + 3] = maximumAlpha;
     }
   }
   context.putImageData(image, 0, 0);

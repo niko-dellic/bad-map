@@ -4,6 +4,8 @@ import {
   type Map as MapLibreMap,
   type PointLike,
 } from "maplibre-gl";
+import DataRasterWorker from "./worker/data.worker.ts?worker&inline";
+import RasterWorker from "./worker/raster.worker.ts?worker&inline";
 import {
   BaseLayer,
   DataLayer,
@@ -11,21 +13,21 @@ import {
   LabelsLayer,
   MarkerLayer,
   SlotLayer,
-} from "./render";
+} from "./render.js";
 import {
   dataLayerState,
   serializeDataLayer,
   type SerializedDataLayer,
-} from "./data";
+} from "./data.js";
 import {
   fitSurfaceViewState,
   lngLatToWorld,
   reprojectPoint,
   reprojectionTransform,
   surfaceDetailViewState,
-} from "./geometry";
-import { streets } from "./packs";
-import { composeTheme, resolveTheme } from "./theme";
+} from "./geometry.js";
+import { streets } from "./packs.js";
+import { composeTheme, resolveTheme } from "./theme.js";
 import type {
   CellGeometry,
   DataRasterFrame,
@@ -52,12 +54,12 @@ import type {
   RGB,
   RasterFrame,
   RasterViewState,
-} from "./types";
-import type { WorkerRequest, WorkerResponse } from "./worker/protocol";
+} from "./types.js";
+import type { WorkerRequest, WorkerResponse } from "./worker/protocol.js";
 import type {
   DataWorkerRequest,
   DataWorkerResponse,
-} from "./worker/data-protocol";
+} from "./worker/data-protocol.js";
 
 const DEFAULT_SOURCE: LowResSource = {
   tileJSON: "https://tiles.openfreemap.org/planet",
@@ -219,11 +221,7 @@ export class LowResBasemap {
     };
     this.#workerFactory =
       options.workerFactory ??
-      (() =>
-        new Worker(new URL("./worker/raster.worker.ts", import.meta.url), {
-          type: "module",
-          name: "bad-map-raster",
-        }));
+      (() => new RasterWorker({ name: "bad-map-raster" }));
   }
 
   async addTo(map: MapLibreMap): Promise<this> {
@@ -245,10 +243,7 @@ export class LowResBasemap {
         fatal: false,
         cause: event.error,
       });
-    this.#dataWorker = new Worker(
-      new URL("./worker/data.worker.ts", import.meta.url),
-      { type: "module", name: "bad-map-data-raster" },
-    );
+    this.#dataWorker = new DataRasterWorker({ name: "bad-map-data-raster" });
     this.#dataWorker.onmessage = (event: MessageEvent<DataWorkerResponse>) =>
       this.#onDataWorkerMessage(event.data);
     this.#dataWorker.onerror = (event) =>
@@ -1376,8 +1371,31 @@ export class LowResBasemap {
     const map = this.#map;
     if (!map?.getLayer(this.layerIds.buildings)) return;
     const paint = this.#buildings3DPaint();
-    for (const [property, value] of Object.entries(paint))
-      map.setPaintProperty(this.layerIds.buildings, property, value);
+    map.setPaintProperty(
+      this.layerIds.buildings,
+      "fill-extrusion-color",
+      paint["fill-extrusion-color"],
+    );
+    map.setPaintProperty(
+      this.layerIds.buildings,
+      "fill-extrusion-height",
+      paint["fill-extrusion-height"],
+    );
+    map.setPaintProperty(
+      this.layerIds.buildings,
+      "fill-extrusion-base",
+      paint["fill-extrusion-base"],
+    );
+    map.setPaintProperty(
+      this.layerIds.buildings,
+      "fill-extrusion-opacity",
+      paint["fill-extrusion-opacity"],
+    );
+    map.setPaintProperty(
+      this.layerIds.buildings,
+      "fill-extrusion-vertical-gradient",
+      paint["fill-extrusion-vertical-gradient"],
+    );
   }
 
   #buildings3DPaint(): NonNullable<FillExtrusionLayerSpecification["paint"]> {

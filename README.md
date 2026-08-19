@@ -15,6 +15,11 @@ npm install bad-map maplibre-gl
 
 MapLibre GL JS is a peer dependency. The default keyless source is OpenFreeMap.
 
+`bad-map` is a browser library, not a server-side map renderer. Creating a map
+requires the DOM, a canvas, WebGL 2, and Web Workers. In SSR frameworks, import
+and initialize it from a client-only component after the map container mounts.
+Server-rendering the map itself is intentionally out of scope.
+
 ## Quick start
 
 ```ts
@@ -259,11 +264,15 @@ select disabled in the demo to turn it off. In the demo, fog is controlled
 exclusively from Display → Atmosphere in the side pane.
 
 The demo also adds its own dithered screen-space vignette above the map. This
-overlay is not exported by the package. Its side-pane controls adjust how far
-the fade reaches into the viewport, morph its shape from the viewport aspect
-ratio toward a true circle, select gradual, smooth, or edge-weighted falloff,
-and tune opacity. The default gradual falloff combines a 64-level 8×8 ordered
-pattern with an alpha ramp to avoid a visible density ring. It reaches 100%
+overlay is not exported by the package. Its dedicated FX-tab controls adjust
+how far the fade reaches into the viewport, choose a screen-rectangle or
+aspect-ratio oval base, morph either base toward a true circle, select linear,
+smooth, or edge-weighted falloff, and tune opacity. At zero circularity, the
+rectangle base uses equal-distance contours from all four edges and corners. The default
+linear falloff uses a 64-level 8×8 ordered pattern. The falloff controls only
+pixel coverage; selected dither pixels use the configured opacity. Keeping
+coverage and pixel alpha independent avoids accidentally squaring the gradient
+and makes the optical fade span the full configured reach. It reaches 100%
 opacity at the viewport edge. Its dither color follows the composed theme
 ground by default, or can be replaced with an explicit color that remains
 unchanged across theme and greyscale updates.
@@ -381,14 +390,38 @@ the host application.
 ## Development
 
 ```sh
-npm install
-npm test
-npm run typecheck
-npm run build
-npm run api:check
+npm ci
+npm run verify
+npm run test:e2e:functional
 npm run test:e2e
 npm run dev
 ```
 
-See [NEXT_STEPS.md](./NEXT_STEPS.md) for implementation status and remaining
-production-depth work around terrain, animated fields, and dense picking.
+`npm run verify` checks formatting, types, unit tests, declarations, the
+production build, and an isolated packed-package consumer. The full Playwright
+suite includes platform-specific visual baselines; the functional subset is
+used in CI.
+
+Before submitting a change, read the
+[contribution guide](https://github.com/niko-dellic/bad-map/blob/main/CONTRIBUTING.md).
+Security issues should follow the
+[security policy](https://github.com/niko-dellic/bad-map/blob/main/SECURITY.md),
+not a public issue. The
+[release checklist](https://github.com/niko-dellic/bad-map/blob/main/RELEASING.md)
+documents the maintainer workflow.
+
+Useful individual commands:
+
+```sh
+npm test
+npm run typecheck
+npm run build
+npm run api:check
+npm run test:package
+npm run test:e2e
+```
+
+See the
+[project roadmap](https://github.com/niko-dellic/bad-map/blob/main/NEXT_STEPS.md)
+for implementation status and remaining production-depth work around terrain,
+animated fields, and dense picking.

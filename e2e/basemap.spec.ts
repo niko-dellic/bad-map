@@ -601,6 +601,7 @@ test("configures fog from the side pane without worker rasterization", async ({
 });
 
 test("configures the demo-only dithered screen vignette", async ({ page }) => {
+  await page.locator("#tab-fx").click();
   const canvas = page.locator("#screen-vignette");
   const enabled = page.locator("#vignette-enabled");
   const color = page.locator("#vignette-color");
@@ -608,13 +609,14 @@ test("configures the demo-only dithered screen vignette", async ({ page }) => {
   await expect(enabled).toBeChecked();
   await expect(page.locator("#vignette-reach")).toHaveValue("0.32");
   await expect(page.locator("#vignette-falloff")).toHaveValue("linear");
+  await expect(page.locator("#vignette-base")).toHaveValue("rectangle");
   await expect(page.locator("#vignette-circularity")).toHaveValue("0.35");
   await expect(page.locator("#vignette-opacity")).toHaveValue("1");
   await expect(page.locator("#vignette-opacity-value")).toHaveText("100%");
   await expect(color).toHaveValue("#0f0f0f");
   await expect(themeColor).toBeChecked();
   await expect(page.locator("#vignette-status")).toHaveText(
-    "gradual · 8×8 CSS-pixel dither · theme color · demo-only",
+    "linear · rectangle base · 8×8 CSS-pixel dither · theme color · demo-only",
   );
 
   await expect
@@ -634,8 +636,19 @@ test("configures the demo-only dithered screen vignette", async ({ page }) => {
     .toMatchObject({ corner: 255, center: 0, width: 960, height: 640 });
 
   const before = await diagnostics(page);
+  await page.locator("#vignette-reach").fill("0.5");
+  await page.locator("#vignette-circularity").fill("0");
+  await expect
+    .poll(() =>
+      canvas.evaluate(
+        (element: HTMLCanvasElement) =>
+          element.getContext("2d")!.getImageData(780, 320, 1, 1).data[3],
+      ),
+    )
+    .toBe(255);
   await page.locator("#vignette-reach").fill("0.34");
   await page.locator("#vignette-falloff").selectOption("edge");
+  await page.locator("#vignette-base").selectOption("oval");
   await page.locator("#vignette-circularity").fill("0.8");
   await page.locator("#vignette-opacity").fill("0.6");
   await color.fill("#5c6f91");
@@ -644,6 +657,7 @@ test("configures the demo-only dithered screen vignette", async ({ page }) => {
   await expect(page.locator("#vignette-circularity-value")).toHaveText("80%");
   await expect(page.locator("#vignette-opacity-value")).toHaveText("60%");
   await expect(page.locator("#vignette-status")).toContainText("edge weighted");
+  await expect(page.locator("#vignette-status")).toContainText("oval base");
   await expect(page.locator("#vignette-status")).toContainText("#5c6f91");
   await expect
     .poll(() =>
@@ -664,8 +678,10 @@ test("configures the demo-only dithered screen vignette", async ({ page }) => {
   expect(after.renderEvents).toBe(before.renderEvents);
   expect(after.lastGeneration).toBe(before.lastGeneration);
 
+  await page.locator("#tab-display").click();
   await page.locator("#theme").selectOption("light");
   await expect(color).toHaveValue("#5c6f91");
+  await page.locator("#tab-fx").click();
   await themeColor.check();
   await expect(color).not.toHaveValue("#5c6f91");
   await expect(page.locator("#vignette-status")).toContainText("theme color");
@@ -1360,6 +1376,7 @@ test("organizes controls into tabs and names the next cell preset", async ({
   );
   for (const [tab, label] of [
     ["#tab-display", "Display settings"],
+    ["#tab-fx", "Screen effects"],
     ["#tab-layers", "Layer settings"],
     ["#tab-data", "Data settings"],
   ] as const) {
@@ -1371,7 +1388,14 @@ test("organizes controls into tabs and names the next cell preset", async ({
     "aria-selected",
     "true",
   );
+  await expect(page.locator("#panel-fx")).toBeHidden();
   await expect(page.locator("#panel-data")).toBeHidden();
+  await page.locator("#tab-fx").click();
+  await expect(page.locator("#panel-fx")).toBeVisible();
+  await expect(page.locator("#vignette-enabled")).toBeVisible();
+  await expect(
+    page.locator("#vignette-enabled").locator("xpath=ancestor::section/h2"),
+  ).toHaveText("Screen vignette");
   await page.locator("#tab-layers").click();
   await expect(page.locator("#panel-layers")).toBeVisible();
   await expect(page.locator("#labels")).not.toBeChecked();

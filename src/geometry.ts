@@ -1,4 +1,4 @@
-import type { CellGeometry, RasterViewState } from "./types";
+import type { CellGeometry, RasterViewState } from "./types.js";
 
 export type Point = readonly [number, number];
 

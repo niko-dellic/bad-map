@@ -18,10 +18,18 @@
   maps, with disabled/regular/dithered demo controls, screen-space start/end
   tuning, custom or theme-derived color, side-pane controls, runtime controls,
   theme-aware defaults, and dithered fog enabled by default.
-- A demo-only, CSS-pixel-dithered screen vignette with configurable edge reach,
+- A dedicated FX tab for demo-only screen-space effects, currently containing a
+  CSS-pixel-dithered screen vignette with configurable edge reach,
   circularity, opacity, visibility, and optical falloff curves. Its default
-  8×8 gradual pattern reduces visible density banding, reaches full opacity,
-  and supports theme-following or custom dither colors.
+  8×8 linear pattern reduces visible density banding, reaches full opacity,
+  supports rectangle or oval base shapes, and supports theme-following or
+  custom dither colors. Coverage and selected-pixel alpha are independent so
+  the optical gradient is not unintentionally squared near the edge.
+- A self-contained browser distribution with embedded workers, NodeNext-safe
+  declarations, package metadata, third-party notices, and an isolated packed
+  consumer test.
+- Open-source contribution, security, release, issue, pull-request, CI, and npm
+  trusted-publishing documentation and automation.
 
 ### Changed
 
@@ -38,6 +46,8 @@
   patches for visibility, opacity, ordering, and picking changes.
 - Activated `bad-map-markers` as the waypoint compositor and kept every data
   palette independent from basemap greyscale.
+- Excluded demo assets and implementation-only worker artifacts from the npm
+  tarball while keeping production source maps for the public bundle.
 
 ## 0.8.0
 

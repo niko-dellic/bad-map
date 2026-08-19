@@ -3,8 +3,8 @@ import type {
   LowResSource,
   RasterFrame,
   RasterViewState,
-} from "../types";
-import type { HeatmapRasterOptions } from "../heatmap";
+} from "../types.js";
+import type { HeatmapRasterOptions } from "../heatmap.js";
 
 export type WorkerRequest =
   | {

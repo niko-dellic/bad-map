@@ -4,10 +4,10 @@ import {
   compositeDataFrames,
   rasterizeDataLayers,
   type SerializedDataLayer,
-} from "../data";
-import type { DataRasterFrame, RasterViewState } from "../types";
-import type { DataWorkerRequest, DataWorkerResponse } from "./data-protocol";
-import { dataFrameTransferables } from "./data-protocol";
+} from "../data.js";
+import type { DataRasterFrame, RasterViewState } from "../types.js";
+import type { DataWorkerRequest, DataWorkerResponse } from "./data-protocol.js";
+import { dataFrameTransferables } from "./data-protocol.js";
 
 let layers: SerializedDataLayer[] = [];
 let disposed = false;

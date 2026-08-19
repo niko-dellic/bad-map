@@ -1,5 +1,5 @@
-import type { Point } from "./geometry";
-import type { FeatureRecord } from "./types";
+import type { Point } from "./geometry.js";
+import type { FeatureRecord } from "./types.js";
 
 export interface ProjectedFeature {
   record: FeatureRecord;
