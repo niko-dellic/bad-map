@@ -20,7 +20,7 @@ test("matches settled city, theme, and greyscale baselines", async ({
   await expect(page.locator("#status")).toContainText("rendered in");
   await page.evaluate(() => {
     for (const element of document.querySelectorAll<HTMLElement>(
-      "header, aside, #readout, nav, .maplibregl-control-container",
+      "#top-bar, aside, #readout, nav, .maplibregl-control-container",
     ))
       element.style.display = "none";
     (
@@ -109,7 +109,7 @@ test("matches retina dark and greyscale baselines", async ({ browser }) => {
   await expect(page.locator("#status")).toContainText("rendered in");
   await page.evaluate(() => {
     for (const element of document.querySelectorAll<HTMLElement>(
-      "header, aside, #readout, nav, .maplibregl-control-container",
+      "#top-bar, aside, #readout, nav, .maplibregl-control-container",
     ))
       element.style.display = "none";
     (
@@ -139,7 +139,7 @@ test("matches the experimental pitched surface baseline", async ({ page }) => {
   await expect(page.locator("#status")).toContainText("rendered in");
   const generation = await page.evaluate(() => {
     for (const element of document.querySelectorAll<HTMLElement>(
-      "header, aside, #readout, nav, .maplibregl-control-container",
+      "#top-bar, aside, #readout, nav, .maplibregl-control-container",
     ))
       element.style.display = "none";
     const demo = (
@@ -206,6 +206,7 @@ test("matches the low-resolution pickup heatmap baseline", async ({ page }) => {
     ).__badMapDemo;
     return demo.diagnostics.lastGeneration;
   });
+  await page.locator("#tab-data").click();
   await page.locator("#heatmap-mode").selectOption("lowres");
   await expect(page.locator("#heatmap-status")).toContainText(
     "weighted pickups · lowres",
@@ -224,7 +225,7 @@ test("matches the low-resolution pickup heatmap baseline", async ({ page }) => {
     .toBeGreaterThan(generation);
   await page.evaluate(() => {
     for (const element of document.querySelectorAll<HTMLElement>(
-      "header, aside, #readout, nav, .maplibregl-control-container",
+      "#top-bar, aside, #readout, nav, .maplibregl-control-container",
     ))
       element.style.display = "none";
   });

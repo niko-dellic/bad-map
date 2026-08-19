@@ -49,6 +49,8 @@ export declare class LowResBasemap {
     getLayers(): LowResLayerPackDescriptor[];
     refresh(): this;
     queryFeatures(point: PointLike): LowResFeature[];
+    setFeatureInteractionEnabled(enabled: boolean): this;
+    getFeatureInteractionEnabled(): boolean;
     setSelectedFeature(feature?: LowResFeature): this;
     on<K extends keyof LowResEventMap>(type: K, listener: Listener<K>): this;
     off<K extends keyof LowResEventMap>(type: K, listener: Listener<K>): this;

@@ -104,6 +104,7 @@ export class LowResBasemap {
   #baseLayer: BaseLayer | undefined;
   #dataLayer: DataLayer | undefined;
   #labelsLayer: LabelsLayer | undefined;
+  #featureInteractionEnabled: boolean;
   #hovered: LowResFeature | undefined;
   #selectedKey: string | undefined;
   #listeners = new Map<keyof LowResEventMap, Set<(event: never) => void>>();
@@ -136,6 +137,7 @@ export class LowResBasemap {
     this.#projectionMode = options.projectionMode ?? "screen";
     this.#buildings3D = normalizeBuildings3D(options.buildings3D);
     this.#heatmap = normalizeHeatmap(options.heatmap);
+    this.#featureInteractionEnabled = options.featureInteraction ?? true;
     const surface = this.#projectionMode === "surface";
     this.#camera = {
       rotation: options.camera?.rotation ?? surface,
@@ -231,8 +233,10 @@ export class LowResBasemap {
     map.on("move", this.#onMove);
     map.on("moveend", this.#onMoveEnd);
     map.on("resize", this.#onMoveEnd);
-    map.on("mousemove", this.#onMouseMove);
-    map.on("click", this.#onClick);
+    if (this.#featureInteractionEnabled) {
+      map.on("mousemove", this.#onMouseMove);
+      map.on("click", this.#onClick);
+    }
     this.#requestRender(true);
     return this;
   }
@@ -516,6 +520,36 @@ export class LowResBasemap {
         lngLat: { lng: lngLat.lng, lat: lngLat.lat },
       },
     ];
+  }
+
+  setFeatureInteractionEnabled(enabled: boolean): this {
+    if (enabled === this.#featureInteractionEnabled) return this;
+    this.#featureInteractionEnabled = enabled;
+    const map = this.#map;
+    if (map) {
+      if (enabled) {
+        map.on("mousemove", this.#onMouseMove);
+        map.on("click", this.#onClick);
+      } else {
+        map.off("mousemove", this.#onMouseMove);
+        map.off("click", this.#onClick);
+      }
+    }
+    if (!enabled) {
+      if (this.#hovered)
+        this.#emit("featureleave", { target: this, feature: this.#hovered });
+      this.#hovered = undefined;
+      if (this.#selectedKey) {
+        this.#selectedKey = undefined;
+        this.#emit("selectionchange", { target: this });
+      }
+      map?.triggerRepaint();
+    }
+    return this;
+  }
+
+  getFeatureInteractionEnabled(): boolean {
+    return this.#featureInteractionEnabled;
   }
 
   setSelectedFeature(feature?: LowResFeature): this {

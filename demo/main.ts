@@ -1,5 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Map, NavigationControl } from "maplibre-gl";
+import "@phosphor-icons/web/regular";
+import { Map, Marker, NavigationControl } from "maplibre-gl";
 import {
   landuse,
   LowResBasemap,
@@ -8,7 +9,6 @@ import {
   streets,
   topographic,
   transit,
-  weather,
 } from "../src";
 import "./style.css";
 
@@ -53,19 +53,109 @@ const packDescriptors = [
   political({ enabled: false, priority: 15 }),
   marine({ enabled: false, priority: 12 }),
   landuse({ enabled: false, priority: 8 }),
-  weather({ source: "weather", enabled: false, priority: 30 }),
 ];
 const basemap = new LowResBasemap({
   source: BASE_SOURCE,
   layers: packDescriptors,
   colorMode: "greyscale",
-  camera: { rotation: false, pitch: false, maxPitch: 70 },
+  featureInteraction: false,
+  camera: { rotation: true, pitch: false, maxPitch: 70 },
 });
 const status = document.querySelector<HTMLSpanElement>("#status")!;
 const readout = document.querySelector<HTMLElement>("#readout")!;
+const featureQueryToggle = document.querySelector<HTMLButtonElement>(
+  "#feature-query-toggle",
+)!;
 const settings = document.querySelector<HTMLElement>("#settings")!;
 const settingsToggle =
   document.querySelector<HTMLButtonElement>("#settings-toggle")!;
+const settingsResize = document.querySelector<HTMLElement>("#settings-resize")!;
+const tabButtons = Array.from(
+  document.querySelectorAll<HTMLButtonElement>(".panel-tab"),
+);
+const tabPanels = Array.from(
+  document.querySelectorAll<HTMLElement>(".tab-panel"),
+);
+
+const activateTab = (tab: string, focus = false) => {
+  for (const button of tabButtons) {
+    const active = button.dataset.tab === tab;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    if (active && focus) button.focus();
+  }
+  for (const panel of tabPanels) panel.hidden = panel.id !== `panel-${tab}`;
+  document.querySelector<HTMLElement>(".panel-scroll")!.scrollTop = 0;
+};
+
+tabButtons.forEach((button, index) => {
+  button.onclick = () => activateTab(button.dataset.tab!);
+  button.onkeydown = (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabButtons.length - 1
+          : (index +
+              (event.key === "ArrowRight" ? 1 : -1) +
+              tabButtons.length) %
+            tabButtons.length;
+    activateTab(tabButtons[nextIndex]!.dataset.tab!, true);
+  };
+});
+
+const SETTINGS_MIN_WIDTH = 280;
+const SETTINGS_MAX_WIDTH = 560;
+const setSettingsWidth = (width: number) => {
+  const viewportMaximum = Math.max(SETTINGS_MIN_WIDTH, window.innerWidth - 28);
+  const next = Math.round(
+    Math.min(
+      SETTINGS_MAX_WIDTH,
+      viewportMaximum,
+      Math.max(SETTINGS_MIN_WIDTH, width),
+    ),
+  );
+  document.documentElement.style.setProperty("--settings-width", `${next}px`);
+  settingsResize.setAttribute("aria-valuenow", String(next));
+};
+
+let resizeStart: { pointerX: number; width: number } | undefined;
+settingsResize.onpointerdown = (event) => {
+  if (settings.classList.contains("is-collapsed")) return;
+  resizeStart = {
+    pointerX: event.clientX,
+    width: settings.getBoundingClientRect().width,
+  };
+  settingsResize.setPointerCapture(event.pointerId);
+  document.body.classList.add("is-resizing");
+};
+settingsResize.onpointermove = (event) => {
+  if (!resizeStart) return;
+  setSettingsWidth(resizeStart.width + resizeStart.pointerX - event.clientX);
+};
+const finishResize = (event: PointerEvent) => {
+  if (!resizeStart) return;
+  resizeStart = undefined;
+  if (settingsResize.hasPointerCapture(event.pointerId))
+    settingsResize.releasePointerCapture(event.pointerId);
+  document.body.classList.remove("is-resizing");
+};
+settingsResize.onpointerup = finishResize;
+settingsResize.onpointercancel = finishResize;
+settingsResize.onkeydown = (event) => {
+  const step = event.shiftKey ? 40 : 10;
+  if (event.key === "ArrowLeft")
+    setSettingsWidth(settings.getBoundingClientRect().width + step);
+  else if (event.key === "ArrowRight")
+    setSettingsWidth(settings.getBoundingClientRect().width - step);
+  else if (event.key === "Home") setSettingsWidth(SETTINGS_MIN_WIDTH);
+  else if (event.key === "End") setSettingsWidth(SETTINGS_MAX_WIDTH);
+  else return;
+  event.preventDefault();
+};
 const diagnostics = {
   renderEvents: 0,
   styleEvents: 0,
@@ -73,7 +163,276 @@ const diagnostics = {
   lastDurationMs: 0,
   generations: [] as number[],
   heatmapEvents: 0,
+  featureEnterEvents: 0,
 };
+
+interface PhotonFeature {
+  type: "Feature";
+  geometry: {
+    type: "Point";
+    coordinates: [number, number];
+  };
+  properties: {
+    osm_id?: number;
+    osm_type?: string;
+    type?: string;
+    name?: string;
+    housenumber?: string;
+    street?: string;
+    locality?: string;
+    district?: string;
+    city?: string;
+    county?: string;
+    state?: string;
+    postcode?: string;
+    country?: string;
+  };
+}
+
+interface PhotonResponse {
+  type: "FeatureCollection";
+  features: PhotonFeature[];
+}
+
+const PLACE_SEARCH_ENDPOINT = "https://photon.komoot.io/api/";
+const placeSearch = document.querySelector<HTMLElement>("#place-search")!;
+const placeSearchToggle = document.querySelector<HTMLButtonElement>(
+  "#place-search-toggle",
+)!;
+const placeSearchContent = document.querySelector<HTMLElement>(
+  "#place-search-content",
+)!;
+const placeSearchInput = document.querySelector<HTMLInputElement>(
+  "#place-search-input",
+)!;
+const placeSearchClear = document.querySelector<HTMLButtonElement>(
+  "#place-search-clear",
+)!;
+const placeSearchStatus = document.querySelector<HTMLSpanElement>(
+  "#place-search-status",
+)!;
+const placeSearchResults = document.querySelector<HTMLUListElement>(
+  "#place-search-results",
+)!;
+const placeSearchCache = new globalThis.Map<string, PhotonFeature[]>();
+let placeSearchTimer: ReturnType<typeof setTimeout> | undefined;
+let placeSearchRequest: AbortController | undefined;
+let placeSearchRequestId = 0;
+let placeSearchMatches: PhotonFeature[] = [];
+let activePlaceIndex = -1;
+let placeMarker: Marker | undefined;
+
+const placeName = (feature: PhotonFeature) =>
+  feature.properties.name ||
+  [feature.properties.housenumber, feature.properties.street]
+    .filter(Boolean)
+    .join(" ") ||
+  "Unnamed place";
+
+const placeDetail = (feature: PhotonFeature) => {
+  const properties = feature.properties;
+  const primary = placeName(feature);
+  const street = [properties.housenumber, properties.street]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    street !== primary ? street : undefined,
+    properties.locality,
+    properties.district,
+    properties.city,
+    properties.county,
+    properties.state,
+    properties.postcode,
+    properties.country,
+  ]
+    .filter(
+      (part, index, parts) => Boolean(part) && parts.indexOf(part) === index,
+    )
+    .join(", ");
+};
+
+const setPlaceResultsOpen = (open: boolean) => {
+  placeSearchResults.hidden = !open;
+  placeSearchInput.setAttribute("aria-expanded", String(open));
+};
+
+const setPlaceSearchExpanded = (expanded: boolean) => {
+  placeSearch.classList.toggle("is-collapsed", !expanded);
+  placeSearchContent.hidden = !expanded;
+  placeSearchToggle.setAttribute("aria-expanded", String(expanded));
+  if (!expanded) setPlaceResultsOpen(false);
+};
+
+const updateActivePlace = (nextIndex: number) => {
+  activePlaceIndex = nextIndex;
+  const options =
+    placeSearchResults.querySelectorAll<HTMLButtonElement>(".place-result");
+  options.forEach((option, index) => {
+    const active = index === activePlaceIndex;
+    option.classList.toggle("is-active", active);
+    option.setAttribute("aria-selected", String(active));
+    if (active) option.scrollIntoView({ block: "nearest" });
+  });
+};
+
+const zoomForPlace = (type?: string) => {
+  if (type === "country") return 5;
+  if (type === "state" || type === "county") return 7;
+  if (type === "city" || type === "town") return 11;
+  if (type === "village" || type === "district") return 13;
+  return 16;
+};
+
+const selectPlace = (feature: PhotonFeature) => {
+  const [longitude, latitude] = feature.geometry.coordinates;
+  placeSearchInput.value = placeName(feature);
+  placeSearchClear.hidden = false;
+  placeSearchStatus.textContent = placeDetail(feature) || "place selected";
+  setPlaceSearchExpanded(false);
+  placeSearchToggle.focus();
+  placeMarker?.remove();
+  placeMarker = new Marker({ color: "#ff6688" })
+    .setLngLat([longitude, latitude])
+    .addTo(map);
+  map.flyTo({
+    center: [longitude, latitude],
+    zoom: zoomForPlace(feature.properties.type),
+    duration: 900,
+    essential: true,
+  });
+};
+
+const renderPlaceResults = (features: PhotonFeature[]) => {
+  placeSearchMatches = features;
+  activePlaceIndex = -1;
+  placeSearchResults.replaceChildren();
+  for (const [index, feature] of features.entries()) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    const name = document.createElement("span");
+    const detail = document.createElement("span");
+    button.type = "button";
+    button.className = "place-result";
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", "false");
+    name.className = "place-result-name";
+    name.textContent = placeName(feature);
+    detail.className = "place-result-detail";
+    detail.textContent =
+      placeDetail(feature) || feature.properties.type || "place";
+    button.append(name, detail);
+    button.onpointermove = () => updateActivePlace(index);
+    button.onclick = () => selectPlace(feature);
+    item.append(button);
+    placeSearchResults.append(item);
+  }
+  setPlaceResultsOpen(
+    features.length > 0 && !placeSearch.classList.contains("is-collapsed"),
+  );
+};
+
+const runPlaceSearch = async (query: string, requestId: number) => {
+  const cacheKey = query.toLocaleLowerCase();
+  const cached = placeSearchCache.get(cacheKey);
+  if (cached) {
+    renderPlaceResults(cached);
+    placeSearchStatus.textContent = `${cached.length} cached result${cached.length === 1 ? "" : "s"}`;
+    return;
+  }
+
+  placeSearchRequest = new AbortController();
+  placeSearchStatus.textContent = "searching…";
+  const params = new URLSearchParams({
+    q: query,
+    limit: "6",
+  });
+  try {
+    const response = await fetch(`${PLACE_SEARCH_ENDPOINT}?${params}`, {
+      signal: placeSearchRequest.signal,
+    });
+    if (!response.ok)
+      throw new Error(`Place lookup failed (${response.status})`);
+    const payload = (await response.json()) as PhotonResponse;
+    if (!Array.isArray(payload.features))
+      throw new TypeError("Place lookup returned an unexpected response");
+    if (requestId !== placeSearchRequestId) return;
+    const features = payload.features.filter(
+      (feature) =>
+        feature?.geometry?.type === "Point" &&
+        feature.geometry.coordinates.length === 2 &&
+        feature.geometry.coordinates.every(Number.isFinite),
+    );
+    placeSearchCache.set(cacheKey, features);
+    renderPlaceResults(features);
+    placeSearchStatus.textContent = features.length
+      ? `${features.length} result${features.length === 1 ? "" : "s"}`
+      : "no places found";
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    if (requestId !== placeSearchRequestId) return;
+    renderPlaceResults([]);
+    placeSearchStatus.textContent =
+      error instanceof Error ? error.message : "Place lookup failed";
+  }
+};
+
+const schedulePlaceSearch = () => {
+  const query = placeSearchInput.value.trim();
+  placeSearchClear.hidden = query.length === 0;
+  if (placeSearchTimer) clearTimeout(placeSearchTimer);
+  placeSearchRequest?.abort();
+  const requestId = ++placeSearchRequestId;
+  if (query.length < 2) {
+    renderPlaceResults([]);
+    placeSearchStatus.textContent = "type at least 2 characters";
+    return;
+  }
+  placeSearchStatus.textContent = "waiting…";
+  placeSearchTimer = setTimeout(
+    () => void runPlaceSearch(query, requestId),
+    350,
+  );
+};
+
+placeSearchToggle.onclick = () => {
+  setPlaceSearchExpanded(true);
+  placeSearchInput.focus();
+};
+placeSearchInput.oninput = schedulePlaceSearch;
+placeSearchInput.onkeydown = (event) => {
+  if (event.key === "ArrowDown" && placeSearchMatches.length) {
+    event.preventDefault();
+    updateActivePlace((activePlaceIndex + 1) % placeSearchMatches.length);
+  } else if (event.key === "ArrowUp" && placeSearchMatches.length) {
+    event.preventDefault();
+    updateActivePlace(
+      (activePlaceIndex - 1 + placeSearchMatches.length) %
+        placeSearchMatches.length,
+    );
+  } else if (event.key === "Enter" && activePlaceIndex >= 0) {
+    event.preventDefault();
+    selectPlace(placeSearchMatches[activePlaceIndex]!);
+  } else if (event.key === "Escape") {
+    setPlaceSearchExpanded(false);
+    placeSearchToggle.focus();
+  }
+};
+placeSearchInput.onfocus = () => {
+  if (placeSearchMatches.length && placeSearchInput.value.trim().length >= 2)
+    setPlaceResultsOpen(true);
+};
+placeSearchClear.onclick = () => {
+  placeSearchInput.value = "";
+  placeMarker?.remove();
+  placeMarker = undefined;
+  schedulePlaceSearch();
+  setPlaceSearchExpanded(false);
+  placeSearchToggle.focus();
+};
+document.addEventListener("pointerdown", (event) => {
+  if (!placeSearch.contains(event.target as Node))
+    setPlaceSearchExpanded(false);
+});
 
 basemap.on("render", ({ durationMs, generation }) => {
   diagnostics.renderEvents += 1;
@@ -92,12 +451,30 @@ basemap.on("error", ({ error }) => {
   status.textContent = error.message;
 });
 basemap.on("featureenter", ({ feature }) => {
+  diagnostics.featureEnterEvents += 1;
   const title = feature.name || feature.class || feature.kind;
   readout.textContent = `${title} · ${feature.packId}/${feature.sourceLayer}`;
 });
 basemap.on("featureleave", () => {
-  readout.textContent = "Move over the map to inspect a feature.";
+  readout.textContent = basemap.getFeatureInteractionEnabled()
+    ? "Move over the map to inspect a feature."
+    : "Mouse feature queries are off.";
 });
+
+featureQueryToggle.onclick = () => {
+  const enabled = !basemap.getFeatureInteractionEnabled();
+  basemap.setFeatureInteractionEnabled(enabled);
+  featureQueryToggle.setAttribute("aria-pressed", String(enabled));
+  const label = enabled
+    ? "Disable mouse feature queries"
+    : "Enable mouse feature queries";
+  featureQueryToggle.setAttribute("aria-label", label);
+  featureQueryToggle.title = label;
+  document.querySelector("#map")!.classList.toggle("is-querying", enabled);
+  readout.textContent = enabled
+    ? "Move over the map to inspect a feature."
+    : "Mouse feature queries are off.";
+};
 
 try {
   await basemap.addTo(map);
@@ -105,47 +482,6 @@ try {
   status.textContent = error instanceof Error ? error.message : String(error);
   throw error;
 }
-
-// A regular MapLibre visualization lives above the low-res basemap and below
-// its labels. This is the package's central layering contract.
-map.addSource("demo-data", {
-  type: "geojson",
-  data: {
-    type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        properties: { magnitude: 18 },
-        geometry: { type: "Point", coordinates: [-74.006, 40.7128] },
-      },
-      {
-        type: "Feature",
-        properties: { magnitude: 11 },
-        geometry: { type: "Point", coordinates: [-73.9857, 40.7484] },
-      },
-      {
-        type: "Feature",
-        properties: { magnitude: 8 },
-        geometry: { type: "Point", coordinates: [-74.0445, 40.6892] },
-      },
-    ],
-  },
-});
-map.addLayer(
-  {
-    id: "demo-points",
-    type: "circle",
-    source: "demo-data",
-    paint: {
-      "circle-radius": ["get", "magnitude"],
-      "circle-color": "#ff6688",
-      "circle-opacity": 0.42,
-      "circle-stroke-color": "#ffb0c0",
-      "circle-stroke-width": 1,
-    },
-  },
-  basemap.layerIds.markers,
-);
 
 const theme = document.querySelector<HTMLSelectElement>("#theme")!;
 theme.onchange = () => {
@@ -197,7 +533,6 @@ locale.onchange = () => basemap.setLocale(locale.value);
 
 const projection = document.querySelector<HTMLSelectElement>("#projection")!;
 const buildings3D = document.querySelector<HTMLInputElement>("#buildings-3d")!;
-const rotation = document.querySelector<HTMLInputElement>("#rotation")!;
 const bearing = document.querySelector<HTMLInputElement>("#bearing")!;
 const pitch = document.querySelector<HTMLInputElement>("#pitch")!;
 const updateCameraLabels = () => {
@@ -209,13 +544,12 @@ const updateCameraLabels = () => {
 const applyProjection = () => {
   const surface = projection.value === "surface";
   pitch.disabled = !surface;
-  rotation.checked = surface || rotation.checked;
   if (!surface) {
     buildings3D.checked = false;
     basemap.setBuildings3DVisible(false);
   }
   basemap.setProjectionMode(surface ? "surface" : "screen").setCamera({
-    rotation: rotation.checked,
+    rotation: true,
     pitch: surface,
     maxPitch: 70,
   });
@@ -229,11 +563,6 @@ buildings3D.onchange = () => {
   }
   basemap.setBuildings3DVisible(buildings3D.checked);
 };
-rotation.onchange = () =>
-  basemap.setCamera({
-    rotation: rotation.checked,
-    pitch: projection.value === "surface",
-  });
 bearing.oninput = () => map.setBearing(Number(bearing.value));
 pitch.oninput = () => map.setPitch(Number(pitch.value));
 map.on("rotate", () => {
@@ -440,27 +769,7 @@ heatmapOpacity.oninput = applyHeatmapControls;
 document.querySelector<HTMLButtonElement>("#apply-sources")!.onclick = () => {
   const baseUrl =
     document.querySelector<HTMLInputElement>("#base-source")!.value;
-  const weatherUrl =
-    document.querySelector<HTMLInputElement>("#weather-source")!.value;
-  const timeKey =
-    document.querySelector<HTMLInputElement>("#weather-time")!.value;
-  basemap.setSources({
-    base: { ...BASE_SOURCE, tileJSON: baseUrl },
-    ...(weatherUrl
-      ? {
-          weather: {
-            tileJSON: weatherUrl,
-            attribution: "Weather source",
-            ...(timeKey ? { timeKey } : {}),
-          },
-        }
-      : {}),
-  });
-  const weatherToggle = document.querySelector<HTMLInputElement>(
-    '[data-pack="weather"]',
-  )!;
-  weatherToggle.checked = Boolean(weatherUrl);
-  basemap.setLayerVisible("weather", Boolean(weatherUrl));
+  basemap.setSource({ ...BASE_SOURCE, tileJSON: baseUrl });
 };
 
 document.querySelector<HTMLButtonElement>("#reset")!.onclick = () => {
@@ -475,12 +784,10 @@ document.querySelector<HTMLButtonElement>("#reset")!.onclick = () => {
 
 settingsToggle.onclick = () => {
   const collapsed = settings.classList.toggle("is-collapsed");
-  settingsToggle.textContent = collapsed ? "expand" : "collapse";
   settingsToggle.setAttribute("aria-expanded", String(!collapsed));
-  settingsToggle.setAttribute(
-    "aria-label",
-    collapsed ? "Expand settings panel" : "Collapse settings panel",
-  );
+  const label = collapsed ? "Expand settings panel" : "Collapse settings panel";
+  settingsToggle.setAttribute("aria-label", label);
+  settingsToggle.title = label;
 };
 
 window.addEventListener("beforeunload", () => basemap.remove());

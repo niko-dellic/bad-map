@@ -1,4 +1,8 @@
 :root {
+  --settings-width: 320px;
+  --ui-control-size: 30px;
+  --ui-font-size: 11px;
+  --ui-icon-size: 15px;
   color: #d7d9e0;
   background: #0e0f12;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -20,7 +24,27 @@ body {
   overflow: hidden;
 }
 
+#map.is-querying .maplibregl-canvas {
+  cursor: crosshair;
+}
+
+#top-bar {
+  position: absolute;
+  z-index: 7;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+#top-bar > header,
+#top-bar > #place-search {
+  position: static;
+}
+
 header,
+#place-search,
 #settings,
 #readout {
   position: absolute;
@@ -35,51 +59,291 @@ header {
   left: 14px;
   display: flex;
   gap: 14px;
-  align-items: baseline;
-  padding: 9px 12px;
+  height: var(--ui-control-size);
+  align-items: center;
+  padding: 0 12px;
+  line-height: 1;
 }
 
 header strong {
   color: #d7d7d7;
 }
 header span,
+#place-search,
 #settings,
 #readout {
   color: #969baa;
   font-size: 12px;
 }
 
+#place-search {
+  z-index: 7;
+  width: min(440px, max(220px, calc(100vw - var(--settings-width) - 280px)));
+  padding: 8px;
+}
+
+#place-search.is-collapsed {
+  width: var(--ui-control-size);
+  height: var(--ui-control-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+#place-search.is-collapsed #place-search-toggle {
+  border: 1px solid #343740;
+}
+
+#place-search:not(.is-collapsed) #place-search-toggle,
+#place-search-content[hidden] {
+  display: none;
+}
+
+.place-search-field {
+  display: flex;
+  gap: 6px;
+}
+
+#place-search-input {
+  width: 100%;
+  min-width: 0;
+  height: var(--ui-control-size);
+  padding: 6px 8px;
+  border: 1px solid #4a4e5a;
+  border-radius: 2px;
+  color: #d7d9e0;
+  background: #17191e;
+  font: inherit;
+  font-size: var(--ui-font-size);
+}
+
+#place-search-input:focus {
+  border-color: #888e9d;
+  outline: 1px solid #888e9d;
+  outline-offset: -1px;
+}
+
+#place-search-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+#place-search-clear {
+  flex: none;
+}
+
+.place-search-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 1px 0;
+  color: #737988;
+  font-size: 9px;
+}
+
+.place-search-meta a {
+  color: #9298a7;
+}
+
+#place-search-results {
+  max-height: min(352px, calc(100vh - 180px));
+  margin: 8px -8px -8px;
+  padding: 0;
+  overflow-y: auto;
+  border-top: 1px solid #343740;
+  list-style: none;
+}
+
+#place-search-results li + li {
+  border-top: 1px solid #292c33;
+}
+
+.place-result {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  text-align: left;
+}
+
+.place-result-name,
+.place-result-detail {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-result-name {
+  color: #e2e4e9;
+  font-size: var(--ui-font-size);
+}
+
+.place-result-detail {
+  margin-top: 3px;
+  color: #858b9a;
+  font-size: 10px;
+}
+
+.place-result.is-active,
+.place-result:hover {
+  background: #252830;
+}
+
 #settings {
   top: 14px;
   right: 14px;
   bottom: 14px;
-  width: 286px;
-  padding: 14px;
-  overflow: auto;
+  display: flex;
+  width: var(--settings-width);
+  min-width: 280px;
+  max-width: min(560px, calc(100vw - 28px));
+  flex-direction: column;
+  overflow: visible;
   scrollbar-width: thin;
 }
 
-.panel-title {
+.panel-chrome {
+  flex: none;
+  border-bottom: 1px solid #343740;
+}
+
+.panel-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  color: #f1f2f5;
+  gap: 5px;
+  padding: 12px 14px;
 }
 
 .panel-actions {
   display: flex;
+  flex: none;
   gap: 5px;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: var(--ui-control-size);
+  height: var(--ui-control-size);
+  place-items: center;
+  padding: 0;
+  font-size: var(--ui-icon-size);
+}
+
+#feature-query-toggle[aria-pressed="false"] {
+  color: #858b9a;
+}
+
+#feature-query-toggle[aria-pressed="true"] {
+  color: #f1f2f5;
+  border-color: #626875;
+  background: #252830;
+}
+
+.panel-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 5px;
+}
+
+.panel-tab {
+  display: inline-grid;
+  width: var(--ui-control-size);
+  height: var(--ui-control-size);
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #858b9a;
+}
+
+.panel-tab i {
+  flex: none;
+  font-size: var(--ui-icon-size);
+}
+
+.panel-tab.is-active {
+  color: #f1f2f5;
+  border-color: #626875;
+  background: #252830;
+}
+
+.panel-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 14px 14px;
+  scrollbar-width: thin;
+}
+
+.tab-panel[hidden] {
+  display: none;
+}
+
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  width: 12px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.resize-handle::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.resize-handle:hover::after,
+.resize-handle:focus-visible::after,
+body.is-resizing .resize-handle::after {
+  background: #8b92a2;
+}
+
+body.is-resizing {
+  cursor: ew-resize;
+  user-select: none;
 }
 
 #settings.is-collapsed {
   bottom: auto;
-  width: 164px;
+  width: 48px;
+  min-width: 48px;
   overflow: hidden;
 }
 
-#settings.is-collapsed section,
+#settings.is-collapsed .panel-toolbar {
+  justify-content: center;
+  padding: 8px;
+}
+
+#settings.is-collapsed .panel-tabs,
+#settings.is-collapsed .panel-scroll,
+#settings.is-collapsed .resize-handle,
 #settings.is-collapsed #reset {
   display: none;
+}
+
+#settings.is-collapsed .panel-chrome {
+  border-bottom: 0;
+}
+
+#settings.is-collapsed #settings-toggle {
+  width: 30px;
+  height: 30px;
+}
+
+#settings.is-collapsed #settings-toggle i {
+  transform: scaleX(-1);
 }
 
 section {
@@ -95,6 +359,10 @@ h2 {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.tab-panel > section:first-child {
+  margin-top: 14px;
 }
 
 label {
@@ -160,11 +428,15 @@ output {
 }
 
 #readout {
-  top: 62px;
+  top: 52px;
   left: 14px;
   max-width: min(440px, calc(100% - 28px));
   padding: 9px 12px;
   line-height: 1.5;
+}
+
+#top-bar:has(#place-search:not(.is-collapsed)) ~ #readout {
+  top: 84px;
 }
 
 button {
@@ -173,7 +445,7 @@ button {
   background: transparent;
   padding: 6px 8px;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   cursor: pointer;
 }
 button:hover {
@@ -197,8 +469,13 @@ button:hover {
 @media (max-width: 720px) {
   #settings {
     top: 64px;
-    width: min(260px, calc(100% - 28px));
+    width: min(var(--settings-width), calc(100% - 28px));
+    min-width: min(280px, calc(100% - 28px));
     max-height: calc(100% - 78px);
+  }
+
+  #settings .resize-handle {
+    display: none;
   }
 
   #readout {

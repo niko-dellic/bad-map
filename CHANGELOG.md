@@ -18,6 +18,10 @@
   compositor, establishing one extension point for low-resolution data layers.
 - Kept visualization palettes independent from basemap theme and greyscale
   composition.
+- Reorganized the demo into a resizable, collapsible tabbed sidebar with
+  Phosphor icons and a dedicated data tab.
+- Enabled demo rotation by default and removed the demo-only weather source
+  and time controls.
 
 ## 0.7.0
 

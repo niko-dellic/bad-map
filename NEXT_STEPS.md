@@ -22,8 +22,9 @@ geometry, independent labels, typed nonfatal failures, and public MapLibre APIs.
 | 6. Rotation and 3D             | Experimental        | Bearing-aware screen mode, camera-footprint-fitted world surface, geographic picking, and optional theme-aware native building extrusions                         |
 | 7. Point-density heatmaps      | Foundation complete | Native comparison plus weighted worker kernels, stable domains, compact density buffers, a dedicated data compositor, square-dot dithering, and runtime controls  |
 
-The demo exposes the implemented appearance, lattice, camera, pack, heatmap,
-source, and time options in a scrollable side panel. Greyscale is on by default.
+The demo exposes appearance, lattice, camera, layer, source, and heatmap options
+in a resizable tabbed side panel. Its tabs and icon actions remain fixed above
+the scrolling controls. Greyscale and camera rotation are on by default.
 
 ## Architecture now in place
 

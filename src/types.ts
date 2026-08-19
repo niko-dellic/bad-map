@@ -169,6 +169,8 @@ export interface LowResBasemapOptions {
   /** Label visibility shorthand, or detailed label rendering options. */
   labels?: boolean | LowResLabelsOptions;
   attribution?: boolean;
+  /** Enables pointer hover/click feature queries. Defaults to true. */
+  featureInteraction?: boolean;
   enforceNorthUp?: boolean;
   maxCachedTiles?: number;
   renderThrottleMs?: number;
@@ -251,6 +253,8 @@ export interface LowResBasemapLike {
     readonly interaction: string;
   };
   queryFeatures(point: PointLike): LowResFeature[];
+  setFeatureInteractionEnabled(enabled: boolean): this;
+  getFeatureInteractionEnabled(): boolean;
 }
 
 export interface RasterViewState {
