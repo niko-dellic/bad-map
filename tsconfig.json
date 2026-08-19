@@ -13,5 +13,13 @@
     "skipLibCheck": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src", "test", "demo", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "e2e",
+    "demo",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
 }

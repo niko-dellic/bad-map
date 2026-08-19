@@ -35,6 +35,7 @@ const map = new Map({
 const basemap = new LowResBasemap({
   source: { tileJSON: "https://tiles.openfreemap.org/planet" },
   theme: "dark",
+  colorMode: "color",
   cell: { width: 8, height: 16, dotSize: 2 },
   locale: "en",
 });
@@ -63,16 +64,28 @@ map. It provides:
 
 - `addTo(map)` and `remove()`
 - `setTheme(theme)`
+- `setColorMode("color" | "greyscale")`
 - `setCell({ width, height, dotSize })`
 - `setLocale(locale)`
 - `setLabelsVisible(visible)`
 - `setSource(source)` and `refresh()`
 - `queryFeatures(point)`
 - typed `load`, `render`, `error`, `featureenter`, `featureleave`, and
-  `featureclick` events
+  `featureclick` events, plus `stylechange` for palette updates
 
 The built-in themes are `dark` and `light`. Custom themes use the exported
 `LowResTheme` interface.
+
+Greyscale is independent of the selected theme and can be changed without
+refetching tiles or rerunning semantic rasterization:
+
+```ts
+basemap.setColorMode("greyscale");
+basemap.setColorMode("color");
+```
+
+Only package-owned base and label layers are recolored. MapLibre and deck.gl
+visualizations inserted between them retain their original colors.
 
 The source must use the OpenMapTiles layer schema. Serializable request
 headers and credential options can be passed through `source.request`.
@@ -90,6 +103,11 @@ headers and credential options can be passed through `source.request`.
    It never samples MapLibre's completed framebuffer.
 6. Labels are independently budgeted and rendered in a transparent custom
    layer, allowing application data to sit between cartography and type.
+
+During pan and zoom interactions, the latest completed semantic frame is
+reprojected in the compositor while the worker prepares newer views. Dots stay
+locked to the screen lattice, zooming labels fade while stale, and `moveend`
+always requests an exact frame.
 
 ## V1 constraints
 
@@ -114,6 +132,8 @@ npm install
 npm test
 npm run typecheck
 npm run build
+npm run api:check
+npm run test:e2e
 npm run dev
 ```
 

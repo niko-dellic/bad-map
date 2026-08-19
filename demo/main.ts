@@ -32,9 +32,23 @@ map.addControl(new NavigationControl({ showCompass: false }), "top-right");
 const basemap = new LowResBasemap();
 const status = document.querySelector<HTMLSpanElement>("#status")!;
 const readout = document.querySelector<HTMLElement>("#readout")!;
+const diagnostics = {
+  renderEvents: 0,
+  styleEvents: 0,
+  lastGeneration: -1,
+  lastDurationMs: 0,
+  generations: [] as number[],
+};
 
-basemap.on("render", ({ durationMs }) => {
+basemap.on("render", ({ durationMs, generation }) => {
+  diagnostics.renderEvents += 1;
+  diagnostics.lastGeneration = generation;
+  diagnostics.lastDurationMs = durationMs;
+  diagnostics.generations.push(generation);
   status.textContent = `rendered in ${durationMs.toFixed(0)} ms`;
+});
+basemap.on("stylechange", () => {
+  diagnostics.styleEvents += 1;
 });
 basemap.on("error", ({ error }) => {
   status.textContent = error.message;
@@ -99,6 +113,15 @@ document.querySelector<HTMLButtonElement>("#theme")!.onclick = (event) => {
     : "dark theme";
 };
 
+let greyscale = false;
+document.querySelector<HTMLButtonElement>("#color-mode")!.onclick = (event) => {
+  greyscale = !greyscale;
+  basemap.setColorMode(greyscale ? "greyscale" : "color");
+  (event.currentTarget as HTMLButtonElement).textContent = greyscale
+    ? "full color"
+    : "greyscale";
+};
+
 let large = false;
 document.querySelector<HTMLButtonElement>("#cells")!.onclick = (event) => {
   large = !large;
@@ -122,3 +145,6 @@ document.querySelector<HTMLButtonElement>("#labels")!.onclick = (event) => {
 };
 
 window.addEventListener("beforeunload", () => basemap.remove());
+
+// Read-only demo handles used by the interaction test harness.
+Object.assign(window, { __badMapDemo: { map, basemap, diagnostics } });

@@ -1,14 +1,14 @@
 {
   "name": "bad-map",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A semantic low-resolution Braille basemap for MapLibre GL JS",
   "type": "module",
   "sideEffects": false,
   "files": [
+    "CHANGELOG.md",
     "dist",
     "LICENSE",
     "NEXT_STEPS.md",
-    "NOTICE.md",
     "README.md"
   ],
   "main": "./dist/bad-map.js",
@@ -22,8 +22,11 @@
   },
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
+    "api:check": "npm run build && node scripts/check-api.mjs",
     "dev": "vite --host 127.0.0.1",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:all": "npm test && npm run test:e2e",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "format:check": "prettier --check ."
@@ -44,6 +47,7 @@
     "maplibre-gl": ">=5.0.0 <7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.0.0",
     "maplibre-gl": "^5.24.0",
     "prettier": "^3.6.2",

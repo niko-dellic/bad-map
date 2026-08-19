@@ -21,6 +21,50 @@ export function worldToLngLat(x: number, y: number): Point {
   return [lng, (180 / Math.PI) * Math.atan(Math.sinh(n))];
 }
 
+export interface ReprojectionTransform {
+  /** Multiplier from current CSS pixels to pixels in the completed frame. */
+  scale: number;
+  /** Frame-space offset after applying scale. */
+  offset: Point;
+  zoomDelta: number;
+}
+
+export function reprojectionTransform(
+  frame: RasterViewState,
+  current: RasterViewState,
+): ReprojectionTransform {
+  const [frameX, frameY] = lngLatToWorld(frame.center.lng, frame.center.lat);
+  const [currentX, currentY] = lngLatToWorld(
+    current.center.lng,
+    current.center.lat,
+  );
+  let deltaX = currentX - frameX;
+  while (deltaX > 0.5) deltaX -= 1;
+  while (deltaX < -0.5) deltaX += 1;
+  const scale = 2 ** (frame.zoom - current.zoom);
+  const frameWorldSize = 512 * 2 ** frame.zoom;
+  return {
+    scale,
+    offset: [
+      deltaX * frameWorldSize + frame.width / 2 - (current.width / 2) * scale,
+      (currentY - frameY) * frameWorldSize +
+        frame.height / 2 -
+        (current.height / 2) * scale,
+    ],
+    zoomDelta: current.zoom - frame.zoom,
+  };
+}
+
+export function reprojectPoint(
+  point: Point,
+  transform: ReprojectionTransform,
+): Point {
+  return [
+    point[0] * transform.scale + transform.offset[0],
+    point[1] * transform.scale + transform.offset[1],
+  ];
+}
+
 // Tile z is encoded separately because x/y alone cannot recover it. Keeping
 // this function free-standing makes worker projection cheap and testable.
 export function projectTilePoint(

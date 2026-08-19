@@ -10,11 +10,16 @@ import { frameTransferables } from "./protocol";
 let loader: TileLoader | undefined;
 let controller: AbortController | undefined;
 let disposed = false;
+let pendingRender: Extract<WorkerRequest, { type: "render" }> | undefined;
+let pumpScheduled = false;
+let rendering = false;
+let latestGeneration = -1;
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
   if (message.type === "configure") {
     controller?.abort();
+    pendingRender = undefined;
     loader = new TileLoader(message.source, message.maxCachedTiles);
     post({ type: "ready" });
     return;
@@ -25,12 +30,40 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   }
   if (message.type === "dispose") {
     disposed = true;
+    pendingRender = undefined;
     controller?.abort();
     self.close();
     return;
   }
-  if (message.type === "render") void render(message.generation, message.state);
+  if (message.type === "render") {
+    latestGeneration = Math.max(latestGeneration, message.generation);
+    pendingRender = message;
+    controller?.abort();
+    schedulePump();
+  }
 };
+
+function schedulePump(): void {
+  if (pumpScheduled || disposed) return;
+  pumpScheduled = true;
+  setTimeout(() => void pump(), 0);
+}
+
+async function pump(): Promise<void> {
+  pumpScheduled = false;
+  if (rendering || disposed) return;
+  rendering = true;
+  try {
+    while (pendingRender && !disposed) {
+      const next = pendingRender;
+      pendingRender = undefined;
+      await render(next.generation, next.state);
+    }
+  } finally {
+    rendering = false;
+    if (pendingRender) schedulePump();
+  }
+}
 
 async function render(
   generation: number,
@@ -49,7 +82,8 @@ async function render(
       selection.tiles,
       controller.signal,
     );
-    if (controller.signal.aborted || disposed) return;
+    if (controller.signal.aborted || disposed || generation < latestGeneration)
+      return;
     const frame = rasterizeView(features, state, generation, warnings);
     post({ type: "frame", frame }, frameTransferables(frame));
   } catch (cause) {

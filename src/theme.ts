@@ -1,4 +1,9 @@
-import type { BuiltinThemeName, LowResTheme } from "./types";
+import type {
+  BuiltinThemeName,
+  LowResColorMode,
+  LowResTheme,
+  RGB,
+} from "./types";
 
 export const DARK_THEME: LowResTheme = {
   name: "dark",
@@ -96,4 +101,75 @@ export function resolveTheme(
   if (!theme || theme === "dark") return DARK_THEME;
   if (theme === "light") return LIGHT_THEME;
   return theme;
+}
+
+export function relativeLuminance(color: RGB): number {
+  const [red, green, blue] = color.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+}
+
+function linearToSrgb(value: number): number {
+  const channel =
+    value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055;
+  return Math.round(Math.max(0, Math.min(1, channel)) * 255);
+}
+
+export function greyscaleColor(
+  color: RGB,
+  groundLuminance: number,
+  contrast = 1.18,
+): RGB {
+  const luminance = Math.max(
+    0,
+    Math.min(
+      1,
+      groundLuminance + (relativeLuminance(color) - groundLuminance) * contrast,
+    ),
+  );
+  const channel = linearToSrgb(luminance);
+  return [channel, channel, channel];
+}
+
+export function composeTheme(
+  theme: LowResTheme,
+  colorMode: LowResColorMode,
+): LowResTheme {
+  if (colorMode === "color") return theme;
+  const ground = relativeLuminance(theme.fills.ground);
+  const convert = (color: RGB): RGB => greyscaleColor(color, ground);
+  const mapColors = <T extends Record<string, RGB>>(colors: T): T =>
+    Object.fromEntries(
+      Object.entries(colors).map(([key, color]) => [key, convert(color)]),
+    ) as T;
+  const fills = mapColors(theme.fills);
+  const lines = mapColors(theme.lines);
+  const groundChannel = fills.ground[0];
+  const emphasize = (color: RGB, minimumDistance: number): RGB => {
+    const current = color[0];
+    const channel =
+      groundChannel < 128
+        ? Math.max(current, Math.min(255, groundChannel + minimumDistance))
+        : Math.min(current, Math.max(0, groundChannel - minimumDistance));
+    return [channel, channel, channel];
+  };
+  // Color carries road hierarchy in the source themes. Re-establish that
+  // hierarchy explicitly after chroma is removed.
+  lines.service = emphasize(lines.service, 70);
+  lines.minor = emphasize(lines.minor, 90);
+  lines.secondary = emphasize(lines.secondary, 110);
+  lines.ramp = emphasize(lines.ramp, 130);
+  lines.primary = emphasize(lines.primary, 140);
+  lines.trunk = emphasize(lines.trunk, 160);
+  lines.motorway = emphasize(lines.motorway, 180);
+  return {
+    name: `${theme.name}-greyscale`,
+    fills,
+    lines,
+    labels: mapColors(theme.labels),
+    marker: convert(theme.marker),
+    hover: convert(theme.hover),
+  };
 }

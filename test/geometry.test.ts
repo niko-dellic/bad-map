@@ -5,6 +5,8 @@ import {
   erode,
   gridSize,
   lngLatToWorld,
+  reprojectPoint,
+  reprojectionTransform,
   visibleTiles,
   worldToLngLat,
 } from "../src/geometry";
@@ -63,5 +65,33 @@ describe("geometry", () => {
 
   it("uses complete cells at partial viewport edges", () => {
     expect(gridSize(101, 65, state.cell)).toEqual({ columns: 13, rows: 5 });
+  });
+
+  it("maps an unchanged camera to identical frame pixels", () => {
+    const transform = reprojectionTransform(state, state);
+    expect(transform).toEqual({ scale: 1, offset: [0, 0], zoomDelta: 0 });
+    expect(reprojectPoint([123, 45], transform)).toEqual([123, 45]);
+  });
+
+  it("reprojects panned and zoomed cameras through Web Mercator", () => {
+    const current = {
+      ...state,
+      center: { lng: 1, lat: 0 },
+      zoom: 6,
+    };
+    const transform = reprojectionTransform(state, current);
+    expect(transform.scale).toBe(0.5);
+    expect(transform.zoomDelta).toBe(1);
+    // The current center lands east of the old frame center.
+    expect(
+      reprojectPoint([current.width / 2, current.height / 2], transform)[0],
+    ).toBeGreaterThan(state.width / 2);
+  });
+
+  it("uses the short wrapped distance across the antimeridian", () => {
+    const frame = { ...state, center: { lng: 179.9, lat: 0 } };
+    const current = { ...state, center: { lng: -179.9, lat: 0 } };
+    const transform = reprojectionTransform(frame, current);
+    expect(Math.abs(transform.offset[0])).toBeLessThan(20);
   });
 });

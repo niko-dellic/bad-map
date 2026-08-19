@@ -3,13 +3,16 @@ import type {
   CustomRenderMethodInput,
   Map as MapLibreMap,
 } from "maplibre-gl";
+import { reprojectionTransform } from "./geometry";
 import { FillClass, LabelInk, LineClass } from "./style";
 import type { LowResTheme, RGB, RasterFrame } from "./types";
 
 interface FrameProvider {
   frame(): RasterFrame | undefined;
+  viewState(): RasterFrame["state"] | undefined;
   theme(): LowResTheme;
   labelsVisible(): boolean;
+  styleRevision(): number;
 }
 
 const VERTEX = `#version 300 es
@@ -27,7 +30,11 @@ uniform sampler2D u_mask;
 uniform sampler2D u_line_class;
 uniform sampler2D u_line_tone;
 uniform sampler2D u_ribbon;
-uniform vec2 u_view_size;
+uniform vec2 u_current_view_size;
+uniform vec2 u_frame_view_size;
+uniform float u_pixel_ratio;
+uniform float u_reproject_scale;
+uniform vec2 u_reproject_offset;
 uniform vec2 u_cell_size;
 uniform float u_dot_size;
 uniform ivec2 u_grid_size;
@@ -49,30 +56,36 @@ int brailleBit(int column, int row) {
 }
 
 void main() {
-  vec2 top_pixel = vec2(gl_FragCoord.x, u_view_size.y - gl_FragCoord.y);
-  ivec2 cell = ivec2(floor(top_pixel / u_cell_size));
-  if (cell.x < 0 || cell.y < 0 || cell.x >= u_grid_size.x || cell.y >= u_grid_size.y) {
+  vec2 top_pixel = vec2(gl_FragCoord.x / u_pixel_ratio,
+                        u_current_view_size.y - gl_FragCoord.y / u_pixel_ratio);
+  vec2 source_pixel = top_pixel * u_reproject_scale + u_reproject_offset;
+  ivec2 source_cell = ivec2(floor(source_pixel / u_cell_size));
+  if (source_cell.x < 0 || source_cell.y < 0 || source_cell.x >= u_grid_size.x || source_cell.y >= u_grid_size.y) {
     out_color = vec4(u_fill_colors[0], 1.0);
     return;
   }
-  vec2 local = top_pixel - vec2(cell) * u_cell_size;
-  int fill_half = local.y >= u_cell_size.y * 0.5 ? 1 : 0;
-  int fill_class = int(texelFetch(u_fill, ivec2(cell.x, cell.y * 2 + fill_half), 0).r * 255.0 + 0.5);
+  vec2 source_local = source_pixel - vec2(source_cell) * u_cell_size;
+  int fill_half = source_local.y >= u_cell_size.y * 0.5 ? 1 : 0;
+  int fill_class = int(texelFetch(u_fill, ivec2(source_cell.x, source_cell.y * 2 + fill_half), 0).r * 255.0 + 0.5);
   vec3 color = u_fill_colors[clamp(fill_class, 0, 4)];
-  if (texelFetch(u_ribbon, cell, 0).r > 0.5) color = mix(color, u_line_colors[16], 0.30);
+  if (texelFetch(u_ribbon, source_cell, 0).r > 0.5) color = mix(color, u_line_colors[16], 0.30);
 
-  int mask = int(texelFetch(u_mask, cell, 0).r * 255.0 + 0.5);
-  int dot_column = clamp(int(floor(local.x / (u_cell_size.x * 0.5))), 0, 1);
-  int dot_row = clamp(int(floor(local.y / (u_cell_size.y * 0.25))), 0, 3);
+  vec2 output_local = top_pixel - floor(top_pixel / u_cell_size) * u_cell_size;
+  int dot_column = clamp(int(floor(output_local.x / (u_cell_size.x * 0.5))), 0, 1);
+  int dot_row = clamp(int(floor(output_local.y / (u_cell_size.y * 0.25))), 0, 3);
   vec2 center = vec2((float(dot_column) + 0.5) * u_cell_size.x * 0.5,
                      (float(dot_row) + 0.5) * u_cell_size.y * 0.25);
-  vec2 distance_to_dot = abs(local - center);
+  vec2 distance_to_dot = abs(output_local - center);
   bool in_dot = distance_to_dot.x <= u_dot_size * 0.5 && distance_to_dot.y <= u_dot_size * 0.5;
-  bool bit_on = (mask & brailleBit(dot_column, dot_row)) != 0;
+
+  int source_dot_column = clamp(int(floor(source_local.x / (u_cell_size.x * 0.5))), 0, 1);
+  int source_dot_row = clamp(int(floor(source_local.y / (u_cell_size.y * 0.25))), 0, 3);
+  int mask = int(texelFetch(u_mask, source_cell, 0).r * 255.0 + 0.5);
+  bool bit_on = (mask & brailleBit(source_dot_column, source_dot_row)) != 0;
   if (in_dot && bit_on) {
-    int line_class = int(texelFetch(u_line_class, cell, 0).r * 255.0 + 0.5);
+    int line_class = int(texelFetch(u_line_class, source_cell, 0).r * 255.0 + 0.5);
     vec3 ink = u_line_colors[clamp(line_class, 0, 17)];
-    if (texelFetch(u_line_tone, cell, 0).r > 0.5) ink = mix(u_fill_colors[0], ink, 0.45);
+    if (texelFetch(u_line_tone, source_cell, 0).r > 0.5) ink = mix(u_fill_colors[0], ink, 0.45);
     color = ink;
   }
   out_color = vec4(color, 1.0);
@@ -81,10 +94,25 @@ void main() {
 const LABEL_FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D u_texture;
+uniform vec2 u_current_view_size;
+uniform vec2 u_frame_view_size;
+uniform float u_pixel_ratio;
+uniform float u_reproject_scale;
+uniform vec2 u_reproject_offset;
+uniform float u_opacity;
 in vec2 v_uv;
 out vec4 out_color;
 void main() {
-  out_color = texture(u_texture, vec2(v_uv.x, 1.0 - v_uv.y));
+  vec2 top_pixel = vec2(gl_FragCoord.x / u_pixel_ratio,
+                        u_current_view_size.y - gl_FragCoord.y / u_pixel_ratio);
+  vec2 source_pixel = top_pixel * u_reproject_scale + u_reproject_offset;
+  if (source_pixel.x < 0.0 || source_pixel.y < 0.0 ||
+      source_pixel.x >= u_frame_view_size.x || source_pixel.y >= u_frame_view_size.y) {
+    out_color = vec4(0.0);
+    return;
+  }
+  out_color = texture(u_texture, source_pixel / u_frame_view_size);
+  out_color.a *= u_opacity;
 }`;
 
 function compile(
@@ -248,6 +276,8 @@ export class BaseLayer extends ScreenLayer {
   protected draw(gl: WebGL2RenderingContext, shader: WebGLProgram): void {
     const frame = this.provider.frame();
     if (!frame) return;
+    const current = this.provider.viewState() ?? frame.state;
+    const transform = reprojectionTransform(frame.state, current);
     if (frame.generation !== this.#uploadedGeneration) {
       this.#upload(gl, 0, frame.columns, frame.rows * 2, frame.fill);
       this.#upload(gl, 1, frame.columns, frame.rows, frame.lineMask);
@@ -268,20 +298,35 @@ export class BaseLayer extends ScreenLayer {
       gl.bindTexture(gl.TEXTURE_2D, value);
       gl.uniform1i(gl.getUniformLocation(shader, names[index]!), index);
     });
-    const ratio = frame.state.pixelRatio;
+    const ratio = current.pixelRatio;
     gl.uniform2f(
-      gl.getUniformLocation(shader, "u_view_size"),
-      frame.state.width * ratio,
-      frame.state.height * ratio,
+      gl.getUniformLocation(shader, "u_current_view_size"),
+      current.width,
+      current.height,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_frame_view_size"),
+      frame.state.width,
+      frame.state.height,
+    );
+    gl.uniform1f(gl.getUniformLocation(shader, "u_pixel_ratio"), ratio);
+    gl.uniform1f(
+      gl.getUniformLocation(shader, "u_reproject_scale"),
+      transform.scale,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_reproject_offset"),
+      transform.offset[0],
+      transform.offset[1],
     );
     gl.uniform2f(
       gl.getUniformLocation(shader, "u_cell_size"),
-      frame.state.cell.width * ratio,
-      frame.state.cell.height * ratio,
+      frame.state.cell.width,
+      frame.state.cell.height,
     );
     gl.uniform1f(
       gl.getUniformLocation(shader, "u_dot_size"),
-      frame.state.cell.dotSize * ratio,
+      frame.state.cell.dotSize,
     );
     gl.uniform2i(
       gl.getUniformLocation(shader, "u_grid_size"),
@@ -331,6 +376,7 @@ export class LabelsLayer extends ScreenLayer {
   #texture: WebGLTexture | undefined;
   #canvas: HTMLCanvasElement | undefined;
   #uploadedGeneration = -1;
+  #uploadedStyleRevision = -1;
 
   protected fragmentSource(): string {
     return LABEL_FRAGMENT;
@@ -343,7 +389,13 @@ export class LabelsLayer extends ScreenLayer {
   protected draw(gl: WebGL2RenderingContext, shader: WebGLProgram): void {
     const frame = this.provider.frame();
     if (!frame || !this.#texture || !this.#canvas) return;
-    if (frame.generation !== this.#uploadedGeneration) {
+    const current = this.provider.viewState() ?? frame.state;
+    const transform = reprojectionTransform(frame.state, current);
+    const revision = this.provider.styleRevision();
+    if (
+      frame.generation !== this.#uploadedGeneration ||
+      revision !== this.#uploadedStyleRevision
+    ) {
       renderLabels(
         this.#canvas,
         frame,
@@ -362,10 +414,36 @@ export class LabelsLayer extends ScreenLayer {
         this.#canvas,
       );
       this.#uploadedGeneration = frame.generation;
+      this.#uploadedStyleRevision = revision;
     }
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.#texture);
     gl.uniform1i(gl.getUniformLocation(shader, "u_texture"), 0);
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_current_view_size"),
+      current.width,
+      current.height,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_frame_view_size"),
+      frame.state.width,
+      frame.state.height,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(shader, "u_pixel_ratio"),
+      current.pixelRatio,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(shader, "u_reproject_scale"),
+      transform.scale,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(shader, "u_reproject_offset"),
+      transform.offset[0],
+      transform.offset[1],
+    );
+    const opacity = 1 - smoothstep(0.08, 0.45, Math.abs(transform.zoomDelta));
+    gl.uniform1f(gl.getUniformLocation(shader, "u_opacity"), opacity);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
@@ -373,6 +451,11 @@ export class LabelsLayer extends ScreenLayer {
   protected release(gl: WebGL2RenderingContext): void {
     if (this.#texture) gl.deleteTexture(this.#texture);
   }
+}
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
 }
 
 function labelColors(theme: LowResTheme): RGB[] {

@@ -4,10 +4,12 @@ import {
   type PointLike,
 } from "maplibre-gl";
 import { BaseLayer, LabelsLayer } from "./render";
-import { resolveTheme } from "./theme";
+import { reprojectPoint, reprojectionTransform } from "./geometry";
+import { composeTheme, resolveTheme } from "./theme";
 import type {
   CellGeometry,
   LowResBasemapOptions,
+  LowResColorMode,
   LowResError,
   LowResEventMap,
   LowResFeature,
@@ -48,7 +50,10 @@ export class LowResBasemap {
   >;
   #source: LowResSource;
   #cell: CellGeometry;
+  #baseTheme: LowResTheme;
   #theme: LowResTheme;
+  #colorMode: LowResColorMode;
+  #styleRevision = 0;
   #map: MapLibreMap | undefined;
   #worker: Worker | undefined;
   #frame: RasterFrame | undefined;
@@ -66,7 +71,9 @@ export class LowResBasemap {
     this.#source = options.source ?? DEFAULT_SOURCE;
     this.#cell = { ...DEFAULT_CELL, ...options.cell };
     validateCell(this.#cell);
-    this.#theme = resolveTheme(options.theme);
+    this.#baseTheme = resolveTheme(options.theme);
+    this.#colorMode = validateColorMode(options.colorMode ?? "color");
+    this.#theme = composeTheme(this.#baseTheme, this.#colorMode);
     this.#options = {
       locale: options.locale ?? "en",
       labels: options.labels ?? true,
@@ -114,8 +121,15 @@ export class LowResBasemap {
       maxCachedTiles: this.#options.maxCachedTiles,
     });
 
-    this.#baseLayer = new BaseLayer(this.layerIds.base, this);
-    this.#labelsLayer = new LabelsLayer(this.layerIds.labels, this);
+    const provider = {
+      frame: () => this.#frame,
+      viewState: () => this.#currentViewState(),
+      theme: () => this.#theme,
+      labelsVisible: () => this.#options.labels,
+      styleRevision: () => this.#styleRevision,
+    };
+    this.#baseLayer = new BaseLayer(this.layerIds.base, provider);
+    this.#labelsLayer = new LabelsLayer(this.layerIds.labels, provider);
     map.addLayer(this.#baseLayer);
     map.addLayer(this.#labelsLayer);
 
@@ -161,8 +175,16 @@ export class LowResBasemap {
   }
 
   setTheme(theme: LowResBasemapOptions["theme"]): this {
-    this.#theme = resolveTheme(theme);
-    this.refresh();
+    this.#baseTheme = resolveTheme(theme);
+    this.#applyStyle();
+    return this;
+  }
+
+  setColorMode(colorMode: LowResColorMode): this {
+    validateColorMode(colorMode);
+    if (colorMode === this.#colorMode) return this;
+    this.#colorMode = colorMode;
+    this.#applyStyle();
     return this;
   }
 
@@ -181,8 +203,10 @@ export class LowResBasemap {
   }
 
   setLabelsVisible(visible: boolean): this {
+    if (visible === this.#options.labels) return this;
     this.#options.labels = visible;
-    this.refresh();
+    this.#styleRevision += 1;
+    this.#map?.triggerRepaint();
     return this;
   }
 
@@ -207,11 +231,22 @@ export class LowResBasemap {
     const map = this.#map;
     if (!frame || !map) return [];
     const screen = pointLike(point);
-    const column = Math.floor(screen.x / frame.state.cell.width);
-    const row = Math.floor(screen.y / frame.state.cell.height);
-    if (column < 0 || column >= frame.columns || row < 0 || row >= frame.rows)
+    const current = this.#currentViewState();
+    if (!current) return [];
+    const framePoint = reprojectPoint(
+      [screen.x, screen.y],
+      reprojectionTransform(frame.state, current),
+    );
+    const frameColumn = Math.floor(framePoint[0] / frame.state.cell.width);
+    const frameRow = Math.floor(framePoint[1] / frame.state.cell.height);
+    if (
+      frameColumn < 0 ||
+      frameColumn >= frame.columns ||
+      frameRow < 0 ||
+      frameRow >= frame.rows
+    )
       return [];
-    const owner = frame.owner[row * frame.columns + column] ?? 0;
+    const owner = frame.owner[frameRow * frame.columns + frameColumn] ?? 0;
     if (!owner) return [];
     const record = frame.features[owner - 1];
     if (!record) return [];
@@ -219,7 +254,10 @@ export class LowResBasemap {
     return [
       {
         ...record,
-        cell: { column, row },
+        cell: {
+          column: Math.floor(screen.x / current.cell.width),
+          row: Math.floor(screen.y / current.cell.height),
+        },
         lngLat: { lng: lngLat.lng, lat: lngLat.lat },
       },
     ];
@@ -235,17 +273,6 @@ export class LowResBasemap {
   off<K extends keyof LowResEventMap>(type: K, listener: Listener<K>): this {
     this.#listeners.get(type)?.delete(listener as (event: never) => void);
     return this;
-  }
-
-  // FrameProvider implementation used by the two custom layers.
-  frame(): RasterFrame | undefined {
-    return this.#frame;
-  }
-  theme(): LowResTheme {
-    return this.#theme;
-  }
-  labelsVisible(): boolean {
-    return this.#options.labels;
   }
 
   readonly #onMove = (): void => {
@@ -273,17 +300,8 @@ export class LowResBasemap {
       this.#timer = undefined;
       if (!this.#map) return;
       this.#lastRenderRequest = performance.now();
-      const canvas = this.#map.getCanvas();
-      const center = this.#map.getCenter();
-      const state: RasterViewState = {
-        center: { lng: center.lng, lat: center.lat },
-        zoom: this.#map.getZoom(),
-        width: canvas.clientWidth,
-        height: canvas.clientHeight,
-        pixelRatio: canvas.width / Math.max(1, canvas.clientWidth),
-        cell: this.#cell,
-        locale: this.#options.locale,
-      };
+      const state = this.#currentViewState();
+      if (!state) return;
       this.#generation += 1;
       this.#post({ type: "render", generation: this.#generation, state });
     };
@@ -329,6 +347,32 @@ export class LowResBasemap {
     this.#worker?.postMessage(message);
   }
 
+  #currentViewState(): RasterViewState | undefined {
+    if (!this.#map) return undefined;
+    const canvas = this.#map.getCanvas();
+    const center = this.#map.getCenter();
+    return {
+      center: { lng: center.lng, lat: center.lat },
+      zoom: this.#map.getZoom(),
+      width: canvas.clientWidth,
+      height: canvas.clientHeight,
+      pixelRatio: canvas.width / Math.max(1, canvas.clientWidth),
+      cell: this.#cell,
+      locale: this.#options.locale,
+    };
+  }
+
+  #applyStyle(): void {
+    this.#theme = composeTheme(this.#baseTheme, this.#colorMode);
+    this.#styleRevision += 1;
+    this.#map?.triggerRepaint();
+    this.#emit("stylechange", {
+      target: this,
+      theme: this.#theme,
+      colorMode: this.#colorMode,
+    });
+  }
+
   #lockNorthUp(map: MapLibreMap): void {
     this.#rotationState = {
       drag: map.dragRotate.isEnabled(),
@@ -369,6 +413,12 @@ function validateCell(cell: CellGeometry): void {
     throw new TypeError("Cell dimensions must be positive numbers");
   if (cell.dotSize > Math.min(cell.width / 2, cell.height / 4))
     throw new RangeError("dotSize cannot exceed the Braille-dot pitch");
+}
+
+function validateColorMode(colorMode: LowResColorMode): LowResColorMode {
+  if (colorMode !== "color" && colorMode !== "greyscale")
+    throw new TypeError(`Unsupported color mode: ${String(colorMode)}`);
+  return colorMode;
 }
 
 function pointLike(point: PointLike): { x: number; y: number } {

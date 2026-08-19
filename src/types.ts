@@ -68,10 +68,13 @@ export interface LowResTheme {
 }
 
 export type BuiltinThemeName = "dark" | "light";
+export type LowResColorMode = "color" | "greyscale";
 
 export interface LowResBasemapOptions {
   source?: LowResSource;
   theme?: BuiltinThemeName | LowResTheme;
+  /** Palette composition mode. It only affects layers owned by this package. */
+  colorMode?: LowResColorMode;
   cell?: Partial<CellGeometry>;
   locale?: string;
   labels?: boolean;
@@ -109,6 +112,11 @@ export interface LowResEventMap {
   featureenter: { target: LowResBasemapLike; feature: LowResFeature };
   featureleave: { target: LowResBasemapLike; feature: LowResFeature };
   featureclick: { target: LowResBasemapLike; feature: LowResFeature };
+  stylechange: {
+    target: LowResBasemapLike;
+    theme: LowResTheme;
+    colorMode: LowResColorMode;
+  };
 }
 
 export interface LowResBasemapLike {
