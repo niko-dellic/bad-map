@@ -133,6 +133,8 @@ export interface LowResHeatmapDataLayer extends LowResDataLayerBase {
   palette?: readonly [RGB, RGB, RGB, RGB];
 }
 
+export type LowResWaypointStyle = "locator" | "caret";
+
 export interface LowResWaypoint {
   id?: string | number;
   position: readonly [longitude: number, latitude: number];
@@ -140,6 +142,8 @@ export interface LowResWaypoint {
   color?: RGB;
   haloColor?: RGB;
   size?: number;
+  /** Marker glyph. Overrides the containing layer's style. */
+  style?: LowResWaypointStyle;
 }
 
 export interface LowResWaypointDataLayer extends LowResDataLayerBase {
@@ -149,6 +153,8 @@ export interface LowResWaypointDataLayer extends LowResDataLayerBase {
   haloColor?: RGB;
   /** Glyph size in CSS pixels. */
   size?: number;
+  /** Marker glyph shared by waypoints without a per-point override. */
+  style?: LowResWaypointStyle;
 }
 
 export interface LowResGeoJSONPointStyle {
@@ -213,6 +219,7 @@ export type LowResDataLayerUpdate = Partial<
     color: RGB;
     haloColor: RGB;
     size: number;
+    style: LowResWaypointStyle;
     point: LowResGeoJSONPointStyle;
     line: LowResGeoJSONLineStyle;
     fill: LowResGeoJSONFillStyle;

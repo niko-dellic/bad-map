@@ -8,6 +8,7 @@ import type {
   LowResDataLayer,
   LowResDataLayerState,
   LowResError,
+  LowResWaypointStyle,
   RGB,
   RasterViewState,
 } from "./types";
@@ -60,6 +61,7 @@ interface SerializedWaypoint {
   color: RGB;
   haloColor: RGB;
   size: number;
+  style: LowResWaypointStyle;
 }
 
 export interface SerializedWaypointLayer extends SerializedBase {
@@ -137,6 +139,7 @@ export function serializeDataLayer(
           color: point.color ?? layer.color ?? [255, 102, 136],
           haloColor: point.haloColor ?? layer.haloColor ?? [15, 17, 20],
           size: positive(point.size ?? layer.size ?? 24, "waypoint size"),
+          style: waypointStyle(point.style ?? layer.style ?? "locator"),
         });
       } catch (cause) {
         warnings.push(
@@ -761,12 +764,23 @@ function drawWaypoint(
   owner: number,
 ): void {
   const [cx, cy] = projectDot(target, point.position);
-  const glyph = ["01110", "11011", "10001", "11011", "01110", "00100"];
+  const glyph =
+    point.style === "caret"
+      ? {
+          rows: ["1000001", "0100010", "0010100", "0001000"],
+          originX: 3,
+          originY: 3,
+        }
+      : {
+          rows: ["01110", "11011", "10001", "11011", "01110", "00100"],
+          originX: 2,
+          originY: 2,
+        };
   const scale = Math.max(1, Math.round(point.size / 20));
   const pixels: [number, number][] = [];
-  glyph.forEach((row, y) =>
+  glyph.rows.forEach((row, y) =>
     [...row].forEach((value, x) => {
-      if (value === "1") pixels.push([x - 2, y - 2]);
+      if (value === "1") pixels.push([x - glyph.originX, y - glyph.originY]);
     }),
   );
   const halo = rgba(point.haloColor, opacity);
@@ -1004,6 +1018,11 @@ function finite(value: number | undefined, name: string): number {
 function positive(value: number, name: string): number {
   if (!(finite(value, name) > 0))
     throw new RangeError(`${name} must be positive`);
+  return value;
+}
+function waypointStyle(value: string): LowResWaypointStyle {
+  if (value !== "locator" && value !== "caret")
+    throw new TypeError(`Unknown waypoint style: ${value}`);
   return value;
 }
 function nonnegative(value: number, name: string): number {

@@ -295,7 +295,7 @@ describe("extensible low-resolution data layers", () => {
     );
   });
 
-  it("scales locator stencils, retains a contrasting halo, and clips at the viewport", () => {
+  it("scales waypoint stencils, switches glyphs, retains a halo, and clips", () => {
     const small = render({
       id: "small",
       type: "waypoint",
@@ -303,6 +303,14 @@ describe("extensible low-resolution data layers", () => {
       color: [255, 0, 0],
       haloColor: [0, 0, 255],
       size: 20,
+      style: "locator",
+    });
+    const caret = render({
+      id: "caret",
+      type: "waypoint",
+      data: [{ position: [0, 0] }],
+      size: 20,
+      style: "caret",
     });
     const large = render({
       id: "large",
@@ -313,10 +321,28 @@ describe("extensible low-resolution data layers", () => {
     const smallDots = small.markerOwner.filter(Boolean).length;
     const largeDots = large.markerOwner.filter(Boolean).length;
     expect(largeDots).toBeGreaterThan(smallDots);
+    expect([...caret.markers]).not.toEqual([...small.markers]);
+    const center =
+      Math.floor(caret.dotRows / 2) * caret.dotColumns +
+      Math.floor(caret.dotColumns / 2);
+    expect(caret.markerOwner[center]).toBeGreaterThan(0);
     expect(
       [...small.markers].some((value, index) => index % 4 === 2 && value > 0),
     ).toBe(true);
     expect(large.markerOwner.length).toBe(large.dotColumns * large.dotRows);
+
+    const overrides = serializeDataLayer({
+      id: "overrides",
+      type: "waypoint",
+      style: "locator",
+      data: [{ position: [0, 0] }, { position: [0.01, 0], style: "caret" }],
+    });
+    expect(overrides.type).toBe("waypoint");
+    if (overrides.type !== "waypoint") throw new Error("Unexpected layer");
+    expect(overrides.waypoints.map((waypoint) => waypoint.style)).toEqual([
+      "locator",
+      "caret",
+    ]);
   });
 
   it("composites cached static and animated frames in deterministic order", () => {

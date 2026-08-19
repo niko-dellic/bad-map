@@ -59,5 +59,6 @@ export type {
   LowResTripsSeekOptions,
   LowResWaypoint,
   LowResWaypointDataLayer,
+  LowResWaypointStyle,
   RGB,
 } from "./types";

@@ -1,5 +1,6 @@
 :root {
-  --settings-width: 320px;
+  --settings-width: 268px;
+  --settings-collapsed-width: 42px;
   --ui-control-size: 30px;
   --ui-font-size: 11px;
   --ui-icon-size: 15px;
@@ -196,8 +197,8 @@ header span,
   bottom: 14px;
   display: flex;
   width: var(--settings-width);
-  min-width: 280px;
-  max-width: min(560px, calc(100vw - 28px));
+  min-width: 248px;
+  max-width: min(480px, calc(100vw - 28px));
   flex-direction: column;
   overflow: visible;
   scrollbar-width: thin;
@@ -212,7 +213,7 @@ header span,
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 12px 14px;
+  padding: 9px 10px;
 }
 
 .panel-actions {
@@ -230,21 +231,20 @@ header span,
   font-size: var(--ui-icon-size);
 }
 
-#feature-query-toggle[aria-pressed="false"],
-#fog-toggle[aria-pressed="false"] {
+#top-bar > .icon-button,
+#place-search.is-collapsed #place-search-toggle {
+  background: rgb(14 15 18 / 88%);
+  backdrop-filter: blur(8px);
+}
+
+#feature-query-toggle[aria-pressed="false"] {
   color: #858b9a;
 }
 
-#feature-query-toggle[aria-pressed="true"],
-#fog-toggle[aria-pressed="true"] {
+#feature-query-toggle[aria-pressed="true"] {
   color: #f1f2f5;
   border-color: #626875;
   background: #252830;
-}
-
-#fog-toggle:disabled {
-  color: #555a66;
-  cursor: not-allowed;
 }
 
 .panel-tabs {
@@ -280,7 +280,7 @@ header span,
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding: 0 14px 14px;
+  padding: 0 10px 10px;
   scrollbar-width: thin;
 }
 
@@ -323,14 +323,14 @@ body.is-resizing {
 
 #settings.is-collapsed {
   bottom: auto;
-  width: 48px;
-  min-width: 48px;
+  width: var(--settings-collapsed-width);
+  min-width: var(--settings-collapsed-width);
   overflow: hidden;
 }
 
 #settings.is-collapsed .panel-toolbar {
   justify-content: center;
-  padding: 8px;
+  padding: 5px;
 }
 
 #settings.is-collapsed .panel-tabs,
@@ -354,8 +354,8 @@ body.is-resizing {
 }
 
 section {
-  margin-top: 15px;
-  padding-top: 12px;
+  margin-top: 13px;
+  padding-top: 10px;
   border-top: 1px solid #343740;
 }
 
@@ -369,15 +369,15 @@ h2 {
 }
 
 .tab-panel > section:first-child {
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 label {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 6px;
-  margin: 8px 0;
+  gap: 5px;
+  margin: 7px 0;
 }
 
 label input[type="range"],
@@ -420,8 +420,8 @@ input[type="range"] {
 }
 
 .trips-transport {
-  margin: 10px 0 12px;
-  padding: 8px;
+  margin: 8px 0 10px;
+  padding: 7px;
   border: 1px solid #343740;
   background: rgb(23 25 30 / 72%);
 }
@@ -542,7 +542,7 @@ button:hover {
   #settings {
     top: 64px;
     width: min(var(--settings-width), calc(100% - 28px));
-    min-width: min(280px, calc(100% - 28px));
+    min-width: min(248px, calc(100% - 28px));
     max-height: calc(100% - 78px);
   }
 

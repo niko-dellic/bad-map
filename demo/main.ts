@@ -85,7 +85,6 @@ const readout = document.querySelector<HTMLElement>("#readout")!;
 const featureQueryToggle = document.querySelector<HTMLButtonElement>(
   "#feature-query-toggle",
 )!;
-const fogToggle = document.querySelector<HTMLButtonElement>("#fog-toggle")!;
 const settings = document.querySelector<HTMLElement>("#settings")!;
 const settingsToggle =
   document.querySelector<HTMLButtonElement>("#settings-toggle")!;
@@ -127,8 +126,8 @@ tabButtons.forEach((button, index) => {
   };
 });
 
-const SETTINGS_MIN_WIDTH = 280;
-const SETTINGS_MAX_WIDTH = 560;
+const SETTINGS_MIN_WIDTH = 248;
+const SETTINGS_MAX_WIDTH = 480;
 const setSettingsWidth = (width: number) => {
   const viewportMaximum = Math.max(SETTINGS_MIN_WIDTH, window.innerWidth - 28);
   const next = Math.round(
@@ -235,12 +234,22 @@ const placeSearchStatus = document.querySelector<HTMLSpanElement>(
 const placeSearchResults = document.querySelector<HTMLUListElement>(
   "#place-search-results",
 )!;
+const waypointStyle =
+  document.querySelector<HTMLSelectElement>("#waypoint-style")!;
+const waypointSize =
+  document.querySelector<HTMLInputElement>("#waypoint-size")!;
+const waypointSizeValue = document.querySelector<HTMLOutputElement>(
+  "#waypoint-size-value",
+)!;
+const waypointStatus =
+  document.querySelector<HTMLOutputElement>("#waypoint-status")!;
 const placeSearchCache = new globalThis.Map<string, PhotonFeature[]>();
 let placeSearchTimer: ReturnType<typeof setTimeout> | undefined;
 let placeSearchRequest: AbortController | undefined;
 let placeSearchRequestId = 0;
 let placeSearchMatches: PhotonFeature[] = [];
 let activePlaceIndex = -1;
+let selectedPlace: PhotonFeature | undefined;
 
 const placeName = (feature: PhotonFeature) =>
   feature.properties.name ||
@@ -303,18 +312,18 @@ const zoomForPlace = (type?: string) => {
   return 16;
 };
 
-const selectPlace = (feature: PhotonFeature) => {
+const currentWaypointStyle = () =>
+  waypointStyle.value === "caret" ? ("caret" as const) : ("locator" as const);
+
+const renderSelectedWaypoint = (feature: PhotonFeature) => {
   const [longitude, latitude] = feature.geometry.coordinates;
-  placeSearchInput.value = placeName(feature);
-  placeSearchClear.hidden = false;
-  placeSearchStatus.textContent = placeDetail(feature) || "place selected";
-  setPlaceSearchExpanded(false);
-  placeSearchToggle.focus();
   basemap.setDataLayer({
     id: SEARCH_WAYPOINT_LAYER,
     type: "waypoint",
     order: 1000,
     pickable: false,
+    style: currentWaypointStyle(),
+    size: Number(waypointSize.value),
     data: [
       {
         ...(feature.properties.osm_id === undefined
@@ -325,6 +334,18 @@ const selectPlace = (feature: PhotonFeature) => {
       },
     ],
   });
+  waypointStatus.textContent = `${placeName(feature)} · ${waypointStyle.selectedOptions[0]?.textContent ?? "waypoint"}`;
+};
+
+const selectPlace = (feature: PhotonFeature) => {
+  const [longitude, latitude] = feature.geometry.coordinates;
+  selectedPlace = feature;
+  placeSearchInput.value = placeName(feature);
+  placeSearchClear.hidden = false;
+  placeSearchStatus.textContent = placeDetail(feature) || "place selected";
+  setPlaceSearchExpanded(false);
+  placeSearchToggle.focus();
+  renderSelectedWaypoint(feature);
   map.flyTo({
     center: [longitude, latitude],
     zoom: zoomForPlace(feature.properties.type),
@@ -454,10 +475,22 @@ placeSearchInput.onfocus = () => {
 };
 placeSearchClear.onclick = () => {
   placeSearchInput.value = "";
+  selectedPlace = undefined;
   basemap.removeDataLayer(SEARCH_WAYPOINT_LAYER);
+  waypointStatus.textContent = "applies to the place-search waypoint";
   schedulePlaceSearch();
   setPlaceSearchExpanded(false);
   placeSearchToggle.focus();
+};
+waypointStyle.onchange = () => {
+  if (selectedPlace) renderSelectedWaypoint(selectedPlace);
+};
+waypointSize.oninput = () => {
+  waypointSizeValue.textContent = waypointSize.value;
+  if (selectedPlace)
+    basemap.updateDataLayer(SEARCH_WAYPOINT_LAYER, {
+      size: Number(waypointSize.value),
+    });
 };
 document.addEventListener("pointerdown", (event) => {
   if (!placeSearch.contains(event.target as Node))
@@ -481,7 +514,8 @@ basemap.on("datarender", () => {
   diagnostics.dataRenderEvents += 1;
 });
 basemap.on("error", ({ error }) => {
-  status.textContent = error.message;
+  if (error.fatal) status.textContent = error.message;
+  else console.warn(`[bad-map] ${error.message}`, error.cause ?? "");
 });
 basemap.on("featureenter", ({ feature }) => {
   diagnostics.featureEnterEvents += 1;
@@ -604,21 +638,11 @@ const syncFogControls = () => {
   document.querySelector("#fog-end-value")!.textContent = fog.end.toFixed(2);
   fogThemeColor.checked = fog.color === undefined;
   fogColor.value = rgbToHex(fog.color ?? themeFogColor);
-  fogToggle.disabled = !surface;
-  fogToggle.setAttribute("aria-pressed", String(fog.visible));
-  const label = surface
-    ? `${fog.visible ? "Disable" : "Enable"} ${fog.mode} fog`
-    : "Fog is available in 3D surface mode";
-  fogToggle.setAttribute("aria-label", label);
-  fogToggle.title = label;
   fogStatus.textContent = !surface
     ? "available in 3D surface mode"
     : fog.visible
       ? `${fog.mode} · ${Math.round(fog.start * 100)}–${Math.round(fog.end * 100)}% viewport depth · ${fog.color ? fogColor.value : "theme color"}`
       : "fog disabled";
-};
-fogToggle.onclick = () => {
-  basemap.setFogVisible(!basemap.getFogOptions().visible);
 };
 fogMode.onchange = () => {
   if (fogMode.value === "disabled") basemap.setFogVisible(false);
@@ -1087,6 +1111,7 @@ const tripsOpacity =
 const tripsStatus = document.querySelector<HTMLOutputElement>("#trips-status")!;
 let tripsDataPromise: Promise<LowResTrip[]> | undefined;
 let tripsFocused = false;
+let tripsLayerReady = false;
 let tripsScrubbing = false;
 let tripsResumeAfterScrub = false;
 const TRIPS_STEP = 15;
@@ -1158,6 +1183,7 @@ const syncTripsOutputs = () => {
 
 const applyTripsMode = async ({ focus = true }: { focus?: boolean } = {}) => {
   if (tripsMode.value === "off") {
+    tripsLayerReady = false;
     basemap.removeDataLayer(TRIPS_LAYER);
     setTripsTransportEnabled(false);
     syncTripsPlayButton(false);
@@ -1184,6 +1210,7 @@ const applyTripsMode = async ({ focus = true }: { focus?: boolean } = {}) => {
       order: 40,
       pickable: true,
     });
+    tripsLayerReady = true;
     setTripsTransportEnabled(true);
     syncTripsPlayButton(true);
     syncTripsTime(Number(tripsTime.value), 1800);
@@ -1194,6 +1221,7 @@ const applyTripsMode = async ({ focus = true }: { focus?: boolean } = {}) => {
     tripsStatus.textContent = `${trips.length.toLocaleString()} animated trips`;
     syncTripsOutputs();
   } catch (error) {
+    tripsLayerReady = false;
     tripsMode.value = "off";
     tripsStatus.textContent =
       error instanceof Error ? error.message : String(error);
@@ -1294,7 +1322,7 @@ tripsWidth.oninput = applyTripStyle;
 tripsOpacity.oninput = applyTripStyle;
 
 const updateTripsClock = () => {
-  if (tripsMode.value !== "off") {
+  if (tripsLayerReady && tripsMode.value !== "off") {
     const playback = basemap.getTripsPlayback(TRIPS_LAYER);
     if (playback.playing && !tripsScrubbing)
       syncTripsTime(playback.currentTime, playback.loopLength);

@@ -105,9 +105,12 @@ test.beforeEach(async ({ page }) => {
   await page.route(UBER_DATA_URL, (route) =>
     route.fulfill({ json: pickupFixture }),
   );
-  await page.route(TRIPS_DATA_URL, (route) =>
-    route.fulfill({ json: tripsFixture }),
-  );
+  await page.route(TRIPS_DATA_URL, async (route) => {
+    // Keep the request pending across at least one animation frame. This
+    // catches UI clocks that assume a selected layer has already loaded.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await route.fulfill({ json: tripsFixture });
+  });
   await page.goto("/");
   await expect(page.locator("#status")).toContainText("rendered in");
 });
@@ -339,6 +342,13 @@ test("debounces OSM place lookup and selects a result", async ({ page }) => {
   expect(searchBox!.height).toBe(settingsToggleBox!.height);
   expect(searchBox!.y).toBe(headerBox!.y);
   expect(searchBox!.x).toBeGreaterThan(headerBox!.x + headerBox!.width);
+  const toolbarBackgrounds = await page
+    .locator("header, #feature-query-toggle, #place-search-toggle")
+    .evaluateAll((elements) =>
+      elements.map((element) => getComputedStyle(element).backgroundColor),
+    );
+  expect(new Set(toolbarBackgrounds)).toHaveProperty("size", 1);
+  expect(toolbarBackgrounds[0]).not.toBe("rgba(0, 0, 0, 0)");
   await toggle.click();
   await expect(input).toBeVisible();
   await expect(input).toBeFocused();
@@ -392,6 +402,20 @@ test("debounces OSM place lookup and selects a result", async ({ page }) => {
       ),
     )
     .toBeCloseTo(4.9041, 2);
+
+  await page.locator("#tab-data").click();
+  await expect(
+    page.locator("#panel-data section").first().locator("h2"),
+  ).toHaveText("Waypoint");
+  await expect(page.locator("#waypoint-style")).toHaveValue("locator");
+  await expect(page.locator("#waypoint-size")).toHaveValue("24");
+  await page.locator("#waypoint-style").selectOption("caret");
+  await page.locator("#waypoint-size").fill("48");
+  await expect(page.locator("#waypoint-size-value")).toHaveText("48");
+  await expect(page.locator("#waypoint-status")).toContainText(
+    "Amsterdam · down caret",
+  );
+  await expect(page.locator(".maplibregl-marker")).toHaveCount(0);
 
   await toggle.click();
   await page.locator("#place-search-clear").click();
@@ -483,29 +507,21 @@ test("toggles greyscale without worker rasterization", async ({ page }) => {
   expect(after.lastGeneration).toBe(before.lastGeneration);
 });
 
-test("toggles regular and dithered fog without worker rasterization", async ({
+test("configures fog from the side pane without worker rasterization", async ({
   page,
 }) => {
-  const toggle = page.locator("#fog-toggle");
   const mode = page.locator("#fog-mode");
   const color = page.locator("#fog-color");
   const themeColor = page.locator("#fog-theme-color");
-  await expect(toggle).toBeEnabled();
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect(toggle).toHaveAttribute("aria-label", "Enable dithered fog");
-  await expect(mode).toHaveValue("disabled");
+  await expect(page.locator("#fog-toggle")).toHaveCount(0);
+  await expect(mode).toHaveValue("dithered");
+  await expect(page.locator("#fog-status")).toContainText("dithered");
   await expect(themeColor).toBeChecked();
   await expect(color).toHaveValue("#0f0f0f");
 
   const before = await diagnostics(page);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect(toggle).toHaveAttribute("aria-label", "Disable dithered fog");
-  await expect(mode).toHaveValue("dithered");
   await mode.selectOption("regular");
-  await expect(toggle).toHaveAttribute("aria-label", "Disable regular fog");
   await mode.selectOption("dithered");
-  await expect(toggle).toHaveAttribute("aria-label", "Disable dithered fog");
   await page.locator("#fog-start").fill("0.35");
   await page.locator("#fog-end").fill("0.82");
   await color.fill("#5c6f91");
@@ -555,17 +571,18 @@ test("toggles regular and dithered fog without worker rasterization", async ({
   ).toBeUndefined();
 
   await mode.selectOption("disabled");
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#fog-status")).toHaveText("fog disabled");
   await mode.selectOption("regular");
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect(toggle).toHaveAttribute("aria-label", "Disable regular fog");
+  await expect(page.locator("#fog-status")).toContainText("regular");
 
   await page.locator("#projection").selectOption("screen");
-  await expect(toggle).toBeDisabled();
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(mode).toHaveValue("regular");
+  await expect(page.locator("#fog-status")).toHaveText(
+    "available in 3D surface mode",
+  );
   await page.locator("#projection").selectOption("surface");
-  await expect(toggle).toBeEnabled();
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(mode).toHaveValue("regular");
+  await expect(page.locator("#fog-status")).toContainText("regular");
 });
 
 test("exposes stable slots and switches between bearing and surface cameras", async ({
@@ -1038,6 +1055,8 @@ test("loads animated trips by default, then pauses, seeks, and restyles them", a
   await page.locator("#tab-data").click();
   await expect(page.locator("#trips-mode")).toHaveValue("lowres");
   await expect(page.locator("#trips-status")).toContainText("2 animated trips");
+  await expect(page.locator("#trips-opacity")).toHaveValue("1");
+  await expect(page.locator("#trips-opacity-value")).toHaveText("1.00");
   expect(
     await page.evaluate(
       (url) =>
@@ -1082,9 +1101,34 @@ test("loads animated trips by default, then pauses, seeks, and restyles them", a
     "true",
   );
   await expect(page.locator("#trips-time-value")).toContainText("/ 1800");
+  const sliderStarted = Number(await page.locator("#trips-time").inputValue());
   await expect
     .poll(async () => (await playback()).currentTime)
     .toBeGreaterThan(started.currentTime);
+  await expect
+    .poll(async () => Number(await page.locator("#trips-time").inputValue()))
+    .toBeGreaterThan(sliderStarted);
+
+  const latencyStatus = await page.locator("#status").textContent();
+  const dataRenders = (await diagnostics(page)).dataRenderEvents;
+  await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __badMapDemo: {
+          basemap: { setDataLayer(layer: unknown): void };
+        };
+      }
+    ).__badMapDemo.basemap.setDataLayer({
+      id: "malformed-trip-check",
+      type: "trips",
+      data: [{ path: [[-74, 40.7]], timestamps: [] }],
+      playing: false,
+    }),
+  );
+  await expect
+    .poll(async () => (await diagnostics(page)).dataRenderEvents)
+    .toBeGreaterThan(dataRenders);
+  await expect(page.locator("#status")).toHaveText(latencyStatus!);
 
   await page.locator("#trips-play").click();
   const paused = await playback();

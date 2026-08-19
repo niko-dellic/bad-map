@@ -32,16 +32,6 @@
         >
           <i class="ph ph-cursor-click" aria-hidden="true"></i>
         </button>
-        <button
-          id="fog-toggle"
-          class="icon-button"
-          type="button"
-          aria-label="Enable dithered fog"
-          aria-pressed="false"
-          title="Enable dithered fog"
-        >
-          <i class="ph ph-cloud-fog" aria-hidden="true"></i>
-        </button>
         <div
           id="place-search"
           class="is-collapsed"
@@ -112,9 +102,9 @@
           role="separator"
           aria-label="Resize settings panel"
           aria-orientation="vertical"
-          aria-valuemin="280"
-          aria-valuemax="560"
-          aria-valuenow="320"
+          aria-valuemin="248"
+          aria-valuemax="480"
+          aria-valuenow="268"
           tabindex="0"
         ></div>
         <div class="panel-chrome">
@@ -223,8 +213,8 @@
               <label
                 >Fog style
                 <select id="fog-mode">
-                  <option value="disabled" selected>disabled</option>
-                  <option value="dithered">dithered</option>
+                  <option value="disabled">disabled</option>
+                  <option value="dithered" selected>dithered</option>
                   <option value="regular">regular</option>
                 </select></label
               >
@@ -261,7 +251,7 @@
                 theme</label
               >
               <output id="fog-status" class="section-status" aria-live="polite"
-                >fog disabled</output
+                >dithered · 55–95% viewport depth · theme color</output
               >
             </section>
 
@@ -370,6 +360,33 @@
             aria-labelledby="tab-data"
             hidden
           >
+            <section>
+              <h2>Waypoint</h2>
+              <label
+                >Marker
+                <select id="waypoint-style">
+                  <option value="locator">locator target</option>
+                  <option value="caret">down caret</option>
+                </select></label
+              >
+              <label
+                >Size <output id="waypoint-size-value">24</output
+                ><input
+                  id="waypoint-size"
+                  type="range"
+                  min="16"
+                  max="64"
+                  step="4"
+                  value="24"
+              /></label>
+              <output
+                id="waypoint-status"
+                class="section-status"
+                aria-live="polite"
+                >applies to the place-search waypoint</output
+              >
+            </section>
+
             <section>
               <h2>Uber pickup heatmap</h2>
               <label
@@ -566,14 +583,14 @@
                   value="2"
               /></label>
               <label
-                >Opacity <output id="trips-opacity-value">0.60</output
+                >Opacity <output id="trips-opacity-value">1.00</output
                 ><input
                   id="trips-opacity"
                   type="range"
                   min="0.1"
                   max="1"
                   step="0.05"
-                  value="0.6"
+                  value="1"
               /></label>
               <output
                 id="trips-status"

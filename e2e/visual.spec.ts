@@ -230,6 +230,37 @@ test("matches the experimental pitched surface baseline", async ({ page }) => {
   await expect(page).toHaveScreenshot("nyc-surface.png", {
     animations: "disabled",
   });
+
+  const maxPitchGeneration = await page.evaluate(() => {
+    const demo = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { jumpTo(options: unknown): void };
+          basemap: { setBuildings3DVisible(visible: boolean): void };
+          diagnostics: { lastGeneration: number };
+        };
+      }
+    ).__badMapDemo;
+    demo.basemap.setBuildings3DVisible(false);
+    const previousGeneration = demo.diagnostics.lastGeneration;
+    demo.map.jumpTo({ pitch: 70 });
+    return previousGeneration;
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              __badMapDemo: { diagnostics: { lastGeneration: number } };
+            }
+          ).__badMapDemo.diagnostics.lastGeneration,
+      ),
+    )
+    .toBeGreaterThan(maxPitchGeneration);
+  await expect(page).toHaveScreenshot("nyc-surface-max-pitch.png", {
+    animations: "disabled",
+  });
 });
 
 test("matches regular and dithered fog at maximum pitch", async ({ page }) => {
@@ -291,7 +322,7 @@ test("keeps dithered fog stable on retina displays", async ({ browser }) => {
   });
   const page = await context.newPage();
   await prepareVisualPage(page);
-  await page.evaluate(() => {
+  const generation = await page.evaluate(() => {
     for (const element of document.querySelectorAll<HTMLElement>(
       "#top-bar, aside, #readout, nav, .maplibregl-control-container",
     ))
@@ -301,13 +332,27 @@ test("keeps dithered fog stable on retina displays", async ({ browser }) => {
         __badMapDemo: {
           map: { jumpTo(options: unknown): void };
           basemap: { setFog(options: unknown): void };
+          diagnostics: { lastGeneration: number };
         };
       }
     ).__badMapDemo;
     demo.basemap.setFog({ visible: true, mode: "dithered" });
+    const previousGeneration = demo.diagnostics.lastGeneration;
     demo.map.jumpTo({ bearing: 18, pitch: 70 });
+    return previousGeneration;
   });
-  await page.waitForTimeout(500);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              __badMapDemo: { diagnostics: { lastGeneration: number } };
+            }
+          ).__badMapDemo.diagnostics.lastGeneration,
+      ),
+    )
+    .toBeGreaterThan(generation);
   await expect(page).toHaveScreenshot("nyc-fog-dithered-retina.png", {
     animations: "disabled",
   });
@@ -455,7 +500,10 @@ test("matches waypoint, GeoJSON, and frozen trip data baselines", async ({
       id: "visual-waypoint",
       type: "waypoint",
       order: 30,
-      data: [{ position: [-74.006, 40.715] }],
+      data: [
+        { position: [-74.006, 40.715], style: "locator" },
+        { position: [-73.99, 40.708], style: "caret", size: 32 },
+      ],
       color: [255, 102, 136],
       haloColor: [15, 17, 20],
       size: 24,

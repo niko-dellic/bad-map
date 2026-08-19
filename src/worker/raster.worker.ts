@@ -7,7 +7,11 @@ import { rasterizeView } from "../rasterize";
 import { bandFor, effectiveStyleZoom, sourceZoom } from "../style";
 import { TileLoader } from "../tile";
 import type { DecodedFeature } from "../tile";
-import type { LowResError, LowResLayerPackDescriptor } from "../types";
+import type {
+  LowResError,
+  LowResLayerPackDescriptor,
+  RasterViewState,
+} from "../types";
 import type { WorkerRequest, WorkerResponse } from "./protocol";
 import { frameTransferables } from "./protocol";
 
@@ -102,7 +106,7 @@ async function pump(): Promise<void> {
     while (pendingRender && !disposed) {
       const next = pendingRender;
       pendingRender = undefined;
-      await render(next.generation, next.state);
+      await render(next.generation, next.state, next.detailState);
     }
   } finally {
     rendering = false;
@@ -113,85 +117,25 @@ async function pump(): Promise<void> {
 async function render(
   generation: number,
   state: Extract<WorkerRequest, { type: "render" }>["state"],
+  detailState?: RasterViewState,
 ): Promise<void> {
   if (disposed) return;
   controller?.abort();
   controller = new AbortController();
   try {
-    const zEff = effectiveStyleZoom(state.zoom, state.cell.height / 4);
-    const band = bandFor(zEff);
-    const bySource = new Map<string, DecodedFeature[]>();
-    const warningsBySource = new Map<string, LowResError[]>();
-    await Promise.all(
-      [...loaders.entries()].map(async ([sourceId, sourceLoader]) => {
-        try {
-          const metadata = await sourceLoader.metadata(controller?.signal);
-          const requestedZoom = sourceZoom(zEff, band, metadata.maxzoom ?? 14);
-          const selection = visibleTiles(state, requestedZoom, 16);
-          const result = await sourceLoader.load(
-            selection.tiles,
-            controller?.signal,
-          );
-          bySource.set(sourceId, result.features);
-          warningsBySource.set(
-            sourceId,
-            result.warnings.map((warning) => ({ ...warning, sourceId })),
-          );
-        } catch (cause) {
-          if (controller?.signal.aborted) throw cause;
-          warningsBySource.set(sourceId, [
-            {
-              code: "source" as const,
-              message: `Unable to load source ${sourceId}`,
-              fatal: false,
-              cause,
-              sourceId,
-            },
-          ]);
-        }
-      }),
-    );
-    const warnings: LowResError[] = [...warningsBySource]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .flatMap(([, sourceWarnings]) => sourceWarnings);
-    const features: DecodedFeature[] = [];
-    for (const layer of layers) {
-      const sourceFeatures = bySource.get(layer.source);
-      if (!sourceFeatures) {
-        if (!loaders.has(layer.source))
-          warnings.push({
-            code: "source",
-            message: `Layer pack ${layer.id} references unknown source ${layer.source}`,
-            fatal: false,
-            sourceId: layer.source,
-            packId: layer.id,
-          });
-        continue;
-      }
-      for (const feature of sourceFeatures) {
-        if (!featureBelongsToPack(feature, layer)) continue;
-        features.push({
-          ...feature,
-          sourceId: layer.source,
-          packId: layer.id,
-          adapter: layer.adapter,
-          ...(layer.numeric ? { numeric: layer.numeric } : {}),
-        });
-      }
-    }
+    const frame = await renderState(generation, state, controller.signal);
     if (controller.signal.aborted || disposed || generation < latestGeneration)
       return;
-    const frame = rasterizeView(features, state, generation, warnings);
-    const heatmapStarted = performance.now();
-    frame.heatmap = rasterizeHeatmap(
-      heatmapPoints,
-      state,
-      frame.columns,
-      frame.rows,
-      heatmapOptions,
+    const detailFrame = detailState
+      ? await renderState(generation, detailState, controller.signal)
+      : undefined;
+    if (controller.signal.aborted || disposed || generation < latestGeneration)
+      return;
+    if (detailFrame) frame.durationMs += detailFrame.durationMs;
+    post(
+      { type: "frame", frame, ...(detailFrame ? { detailFrame } : {}) },
+      frameTransferables(frame, detailFrame),
     );
-    frame.durationMs += performance.now() - heatmapStarted;
-    post({ type: "frame", frame }, frameTransferables(frame));
   } catch (cause) {
     if (controller.signal.aborted || disposed) return;
     const error: WorkerResponse = {
@@ -204,6 +148,83 @@ async function render(
     };
     post(error);
   }
+}
+
+async function renderState(
+  generation: number,
+  state: RasterViewState,
+  signal: AbortSignal,
+): Promise<ReturnType<typeof rasterizeView>> {
+  const zEff = effectiveStyleZoom(state.zoom, state.cell.height / 4);
+  const band = bandFor(zEff);
+  const bySource = new Map<string, DecodedFeature[]>();
+  const warningsBySource = new Map<string, LowResError[]>();
+  await Promise.all(
+    [...loaders.entries()].map(async ([sourceId, sourceLoader]) => {
+      try {
+        const metadata = await sourceLoader.metadata(signal);
+        const requestedZoom = sourceZoom(zEff, band, metadata.maxzoom ?? 14);
+        const selection = visibleTiles(state, requestedZoom, 16);
+        const result = await sourceLoader.load(selection.tiles, signal);
+        bySource.set(sourceId, result.features);
+        warningsBySource.set(
+          sourceId,
+          result.warnings.map((warning) => ({ ...warning, sourceId })),
+        );
+      } catch (cause) {
+        if (signal.aborted) throw cause;
+        warningsBySource.set(sourceId, [
+          {
+            code: "source" as const,
+            message: `Unable to load source ${sourceId}`,
+            fatal: false,
+            cause,
+            sourceId,
+          },
+        ]);
+      }
+    }),
+  );
+  const warnings: LowResError[] = [...warningsBySource]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .flatMap(([, sourceWarnings]) => sourceWarnings);
+  const features: DecodedFeature[] = [];
+  for (const layer of layers) {
+    const sourceFeatures = bySource.get(layer.source);
+    if (!sourceFeatures) {
+      if (!loaders.has(layer.source))
+        warnings.push({
+          code: "source",
+          message: `Layer pack ${layer.id} references unknown source ${layer.source}`,
+          fatal: false,
+          sourceId: layer.source,
+          packId: layer.id,
+        });
+      continue;
+    }
+    for (const feature of sourceFeatures) {
+      if (!featureBelongsToPack(feature, layer)) continue;
+      features.push({
+        ...feature,
+        sourceId: layer.source,
+        packId: layer.id,
+        adapter: layer.adapter,
+        ...(layer.numeric ? { numeric: layer.numeric } : {}),
+      });
+    }
+  }
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const frame = rasterizeView(features, state, generation, warnings);
+  const heatmapStarted = performance.now();
+  frame.heatmap = rasterizeHeatmap(
+    heatmapPoints,
+    state,
+    frame.columns,
+    frame.rows,
+    heatmapOptions,
+  );
+  frame.durationMs += performance.now() - heatmapStarted;
+  return frame;
 }
 
 function post(message: WorkerResponse, transfer: Transferable[] = []): void {

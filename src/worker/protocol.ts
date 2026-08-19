@@ -13,7 +13,12 @@ export type WorkerRequest =
       layers: LowResLayerPackDescriptor[];
       maxCachedTiles: number;
     }
-  | { type: "render"; generation: number; state: RasterViewState }
+  | {
+      type: "render";
+      generation: number;
+      state: RasterViewState;
+      detailState?: RasterViewState;
+    }
   | { type: "set-time"; sourceId: string; timeKey: string | number }
   | {
       type: "set-heatmap";
@@ -25,11 +30,14 @@ export type WorkerRequest =
 
 export type WorkerResponse =
   | { type: "ready" }
-  | { type: "frame"; frame: RasterFrame }
+  | { type: "frame"; frame: RasterFrame; detailFrame?: RasterFrame }
   | { type: "error"; generation: number; message: string; cause?: string };
 
-export function frameTransferables(frame: RasterFrame): Transferable[] {
-  return [
+export function frameTransferables(
+  frame: RasterFrame,
+  detailFrame?: RasterFrame,
+): Transferable[] {
+  const buffers = [
     frame.fill.buffer,
     frame.lineMask.buffer,
     frame.lineClass.buffer,
@@ -39,4 +47,16 @@ export function frameTransferables(frame: RasterFrame): Transferable[] {
     frame.scalar.buffer,
     frame.heatmap.buffer,
   ];
+  if (detailFrame)
+    buffers.push(
+      detailFrame.fill.buffer,
+      detailFrame.lineMask.buffer,
+      detailFrame.lineClass.buffer,
+      detailFrame.lineTone.buffer,
+      detailFrame.owner.buffer,
+      detailFrame.ribbon.buffer,
+      detailFrame.scalar.buffer,
+      detailFrame.heatmap.buffer,
+    );
+  return buffers;
 }

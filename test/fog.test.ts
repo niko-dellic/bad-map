@@ -9,7 +9,7 @@ import {
 
 describe("atmospheric fog", () => {
   it("normalizes options, preserves theme color fallback, and emits resolved state", () => {
-    const basemap = new LowResBasemap({ fog: true });
+    const basemap = new LowResBasemap();
     expect(basemap.getFogOptions()).toEqual({
       visible: true,
       mode: "dithered",
@@ -17,6 +17,9 @@ describe("atmospheric fog", () => {
       end: 0.95,
       opacity: 1,
     });
+    expect(new LowResBasemap({ fog: false }).getFogOptions().visible).toBe(
+      false,
+    );
 
     const events: Array<{ mode: string; color: readonly number[] }> = [];
     basemap.on("fogchange", ({ mode, color }) => events.push({ mode, color }));

@@ -8,6 +8,7 @@ import {
   lngLatToWorld,
   reprojectPoint,
   reprojectionTransform,
+  surfaceDetailViewState,
   visibleTiles,
   worldToLngLat,
 } from "../src/geometry";
@@ -168,5 +169,21 @@ describe("geometry", () => {
     );
     expect(Math.abs(result.center.lng)).toBeGreaterThan(179);
     expect(result.width).toBeLessThan(100);
+  });
+
+  it("preserves camera zoom in a bounded surface detail frame", () => {
+    const current = { ...state, zoom: 14, pitch: 70 };
+    const coverage = { ...current, zoom: 11.5, width: 4096, height: 3200 };
+    expect(
+      surfaceDetailViewState(current, coverage, { maxDimension: 3072 }),
+    ).toMatchObject({
+      center: current.center,
+      zoom: 14,
+      bearing: 0,
+      pitch: 0,
+      width: 3072,
+      height: 3072,
+    });
+    expect(surfaceDetailViewState(current, current)).toBeUndefined();
   });
 });

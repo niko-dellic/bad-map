@@ -28,14 +28,15 @@ interface FogRenderState {
 
 interface FrameProvider {
   frame(): RasterFrame | undefined;
+  detailFrame(): RasterFrame | undefined;
   dataFrame(): DataRasterFrame | undefined;
   viewState(): RasterFrame["state"] | undefined;
   theme(): LowResTheme;
   labelsVisible(): boolean;
   labelsBillboard(): boolean;
   styleRevision(): number;
-  hoveredOwner(): number;
-  selectedOwner(): number;
+  hoveredOwner(frame?: RasterFrame): number;
+  selectedOwner(frame?: RasterFrame): number;
   projectionMode(): "screen" | "surface";
   scalarPalette(): readonly [RGB, RGB, RGB, RGB];
   fog(): FogRenderState;
@@ -133,6 +134,8 @@ uniform vec3 u_selected_color;
 uniform uint u_hover_owner;
 uniform uint u_selected_owner;
 uniform int u_surface;
+uniform float u_edge_fade;
+in vec2 v_uv;
 in vec2 v_surface_pixel;
 out vec4 out_color;
 
@@ -185,7 +188,9 @@ void main() {
   uint owner = texelFetch(u_owner, source_cell, 0).r;
   if (owner != 0u && owner == u_selected_owner) color = mix(color, u_selected_color, 0.58);
   else if (owner != 0u && owner == u_hover_owner) color = mix(color, u_hover_color, 0.42);
-  out_color = vec4(color, 1.0);
+  float edge = min(min(v_uv.x, 1.0 - v_uv.x), min(v_uv.y, 1.0 - v_uv.y));
+  float alpha = u_edge_fade > 0.0 ? smoothstep(0.0, u_edge_fade, edge) : 1.0;
+  out_color = vec4(color, alpha);
 }`;
 
 const DATA_FRAGMENT = `#version 300 es
@@ -687,13 +692,16 @@ abstract class ScreenLayer implements CustomLayerInterface {
 
 export class BaseLayer extends ScreenLayer {
   #textures: WebGLTexture[] = [];
+  #detailTextures: WebGLTexture[] = [];
   #uploadedGeneration = -1;
+  #uploadedDetailGeneration = -1;
 
   protected fragmentSource(): string {
     return BASE_FRAGMENT;
   }
   protected allocate(gl: WebGL2RenderingContext): void {
     this.#textures = Array.from({ length: 6 }, () => texture(gl));
+    this.#detailTextures = Array.from({ length: 6 }, () => texture(gl));
   }
 
   protected draw(
@@ -704,17 +712,48 @@ export class BaseLayer extends ScreenLayer {
     const frame = this.provider.frame();
     if (!frame) return false;
     const current = this.provider.viewState() ?? frame.state;
-    setProjectionUniforms(gl, shader, frame, this.provider, options);
-    const transform = reprojectionTransform(frame.state, current);
+    const detailFrame = this.provider.detailFrame();
     if (frame.generation !== this.#uploadedGeneration) {
-      this.#upload(gl, 0, frame.columns, frame.rows * 2, frame.fill);
-      this.#upload(gl, 1, frame.columns, frame.rows, frame.lineMask);
-      this.#upload(gl, 2, frame.columns, frame.rows, frame.lineClass);
-      this.#upload(gl, 3, frame.columns, frame.rows, frame.lineTone);
-      this.#upload(gl, 4, frame.columns, frame.rows, frame.ribbon);
-      this.#uploadOwner(gl, 5, frame.columns, frame.rows, frame.owner);
+      this.#uploadFrame(gl, this.#textures, frame);
       this.#uploadedGeneration = frame.generation;
     }
+    if (
+      detailFrame &&
+      detailFrame.generation !== this.#uploadedDetailGeneration
+    ) {
+      this.#uploadFrame(gl, this.#detailTextures, detailFrame);
+      this.#uploadedDetailGeneration = detailFrame.generation;
+    }
+    this.#prepareFrame(gl, shader, options, frame, current, this.#textures, 0);
+    gl.disable(gl.BLEND);
+    if (!detailFrame) return;
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    this.#prepareFrame(
+      gl,
+      shader,
+      options,
+      detailFrame,
+      current,
+      this.#detailTextures,
+      0.08,
+    );
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    return false;
+  }
+
+  #prepareFrame(
+    gl: WebGL2RenderingContext,
+    shader: WebGLProgram,
+    options: CustomRenderMethodInput,
+    frame: RasterFrame,
+    current: RasterFrame["state"],
+    textures: WebGLTexture[],
+    edgeFade: number,
+  ): void {
+    setProjectionUniforms(gl, shader, frame, this.provider, options);
+    const transform = reprojectionTransform(frame.state, current);
     const names = [
       "u_fill",
       "u_mask",
@@ -723,7 +762,7 @@ export class BaseLayer extends ScreenLayer {
       "u_ribbon",
       "u_owner",
     ];
-    this.#textures.forEach((value, index) => {
+    textures.forEach((value, index) => {
       gl.activeTexture(gl.TEXTURE0 + index);
       gl.bindTexture(gl.TEXTURE_2D, value);
       gl.uniform1i(gl.getUniformLocation(shader, names[index]!), index);
@@ -782,24 +821,38 @@ export class BaseLayer extends ScreenLayer {
     );
     gl.uniform1ui(
       gl.getUniformLocation(shader, "u_hover_owner"),
-      this.provider.hoveredOwner(),
+      this.provider.hoveredOwner(frame),
     );
     gl.uniform1ui(
       gl.getUniformLocation(shader, "u_selected_owner"),
-      this.provider.selectedOwner(),
+      this.provider.selectedOwner(frame),
     );
-    gl.disable(gl.BLEND);
+    gl.uniform1f(gl.getUniformLocation(shader, "u_edge_fade"), edgeFade);
+  }
+
+  #uploadFrame(
+    gl: WebGL2RenderingContext,
+    textures: WebGLTexture[],
+    frame: RasterFrame,
+  ): void {
+    this.#upload(gl, textures, 0, frame.columns, frame.rows * 2, frame.fill);
+    this.#upload(gl, textures, 1, frame.columns, frame.rows, frame.lineMask);
+    this.#upload(gl, textures, 2, frame.columns, frame.rows, frame.lineClass);
+    this.#upload(gl, textures, 3, frame.columns, frame.rows, frame.lineTone);
+    this.#upload(gl, textures, 4, frame.columns, frame.rows, frame.ribbon);
+    this.#uploadOwner(gl, textures, 5, frame.columns, frame.rows, frame.owner);
   }
 
   #upload(
     gl: WebGL2RenderingContext,
+    textures: WebGLTexture[],
     index: number,
     width: number,
     height: number,
     data: Uint8Array,
   ): void {
     gl.activeTexture(gl.TEXTURE0 + index);
-    gl.bindTexture(gl.TEXTURE_2D, this.#textures[index]!);
+    gl.bindTexture(gl.TEXTURE_2D, textures[index]!);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(
       gl.TEXTURE_2D,
@@ -816,13 +869,14 @@ export class BaseLayer extends ScreenLayer {
 
   #uploadOwner(
     gl: WebGL2RenderingContext,
+    textures: WebGLTexture[],
     index: number,
     width: number,
     height: number,
     data: Uint32Array,
   ): void {
     gl.activeTexture(gl.TEXTURE0 + index);
-    gl.bindTexture(gl.TEXTURE_2D, this.#textures[index]!);
+    gl.bindTexture(gl.TEXTURE_2D, textures[index]!);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(
       gl.TEXTURE_2D,
@@ -839,6 +893,7 @@ export class BaseLayer extends ScreenLayer {
 
   protected release(gl: WebGL2RenderingContext): void {
     this.#textures.forEach((value) => gl.deleteTexture(value));
+    this.#detailTextures.forEach((value) => gl.deleteTexture(value));
   }
 }
 
@@ -861,7 +916,7 @@ export class DataLayer extends ScreenLayer {
     shader: WebGLProgram,
     options: CustomRenderMethodInput,
   ): void | boolean {
-    const frame = this.provider.frame();
+    const frame = this.provider.detailFrame() ?? this.provider.frame();
     if (!frame) return false;
     const dataFrame = this.provider.dataFrame();
     const sourceFrame = dataFrame ?? frame;
@@ -1097,7 +1152,7 @@ export class LabelsLayer extends ScreenLayer {
     shader: WebGLProgram,
     options: CustomRenderMethodInput,
   ): void | boolean {
-    const frame = this.provider.frame();
+    const frame = this.provider.detailFrame() ?? this.provider.frame();
     if (!frame || !this.#texture || !this.#canvas) return false;
     const current = this.provider.viewState() ?? frame.state;
     setProjectionUniforms(gl, shader, frame, this.provider, options);

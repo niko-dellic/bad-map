@@ -28,6 +28,11 @@ export interface SurfaceViewFitOptions {
   maxDimension?: number;
 }
 
+export interface SurfaceDetailOptions {
+  /** Maximum CSS-pixel side of the full-resolution detail frame. */
+  maxDimension?: number;
+}
+
 /**
  * Produces a north-up worker view that contains the ground footprint visible
  * through a pitched MapLibre camera. When the footprint becomes very large,
@@ -81,6 +86,28 @@ export function fitSurfaceViewState(
     pitch: 0,
     width: Math.max(1, Math.ceil(rawWidth * scale)),
     height: Math.max(1, Math.ceil(rawHeight * scale)),
+  };
+}
+
+/**
+ * Creates a full-style-zoom inset for the near and central portion of a
+ * pitched surface. The coverage frame can safely coarsen toward the horizon;
+ * this inset keeps camera pitch from changing the visible foreground LOD.
+ */
+export function surfaceDetailViewState(
+  current: RasterViewState,
+  coverage: RasterViewState,
+  options: SurfaceDetailOptions = {},
+): RasterViewState | undefined {
+  if (coverage.zoom >= current.zoom - 1e-6) return undefined;
+  const maximum = Math.max(256, options.maxDimension ?? 4096);
+  return {
+    ...current,
+    zoom: current.zoom,
+    bearing: 0,
+    pitch: 0,
+    width: maximum,
+    height: maximum,
   };
 }
 

@@ -12,15 +12,21 @@
   styling, picking, playback, and style controls.
 - A video-style trips transport with play/pause, drag scrubbing, keyboard
   seeking, fixed-step controls, and reusable seek/step package methods.
+- Layer- and point-level waypoint glyph selection, including locator and down
+  caret styles, plus live waypoint style and size controls in the demo.
 - Optional regular and ordered-dithered atmospheric fog for pitched surface
   maps, with disabled/regular/dithered demo controls, screen-space start/end
-  tuning, custom or theme-derived color, a toolbar toggle, runtime controls,
-  theme-aware defaults, and dithered as the default enabled style.
+  tuning, custom or theme-derived color, side-pane controls, runtime controls,
+  theme-aware defaults, and dithered fog enabled by default.
 
 ### Changed
 
+- Preserved semantic zoom and near-field lattice density through the full
+  supported pitch range with a feathered full-resolution surface detail frame.
 - Enabled the animated NYC trips example and hid cartographic labels in the
   initial demo view so colored movement is immediately legible.
+- Raised the initial trips opacity to full strength and kept nonfatal data
+  warnings from replacing the primary map render-latency readout.
 - Replaced the demo's DOM place pin with a lattice-aligned locator target.
 - Moved heatmap processing into the extensible data worker while preserving
   the existing heatmap methods and visual grammar.

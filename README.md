@@ -170,9 +170,16 @@ basemap.setDataLayer({
   id: "destination",
   type: "waypoint",
   order: 100,
+  style: "caret",
+  size: 32,
   data: [{ id: "office", position: [-74.006, 40.7128] }],
 });
 ```
+
+Waypoint layers support `locator` targets and downward `caret` glyphs. Set
+`style` and CSS-pixel `size` on the layer, or override either value on an
+individual waypoint. Both shapes stay aligned to the square-dot lattice and
+retain a contrasting halo.
 
 GeoJSON supports points, lines, polygons, their multi-geometry variants, and
 GeometryCollection data. Point, line, fill, and outline styles may be constants
@@ -224,8 +231,10 @@ host map's current pitch; enabling buildings does not change that camera. The
 semantic frame is placed on a flat Web Mercator plane and transformed with
 MapLibre's public custom-layer camera matrix, so dots foreshorten during pitch
 and orbiting while labels billboard to the viewport by default. Its worker
-frame is fitted to the complete camera ground footprint, including the wider
-area visible toward the horizon, with bounded resolution at extreme pitch.
+frame is fitted to the complete camera ground footprint. A second bounded
+full-zoom frame covers the near and central ground, so changing pitch does not
+change the semantic zoom or lattice density; only the compressed far field
+uses the coarser coverage frame.
 Pitch can be disabled independently with `camera: { pitch: false }`.
 
 ```ts
@@ -245,8 +254,9 @@ Optional atmospheric fog hides the finite surface edge as the map approaches
 the horizon. Regular fog uses a smooth blend; dithered fog uses a 4×4 ordered
 pattern anchored to CSS pixels, so its visual scale is stable on retina
 displays. Fog is inactive in screen mode and eases in over the first 20 degrees
-of pitch. Fog defaults to disabled; enabling it without specifying a mode uses
-the dithered style.
+of pitch. Fog defaults to enabled in the dithered style. Set `fog: false` or
+select disabled in the demo to turn it off. In the demo, fog is controlled
+exclusively from Display → Atmosphere in the side pane.
 
 ```ts
 const basemap = new LowResBasemap({

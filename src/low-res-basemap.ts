@@ -22,6 +22,7 @@ import {
   lngLatToWorld,
   reprojectPoint,
   reprojectionTransform,
+  surfaceDetailViewState,
 } from "./geometry";
 import { streets } from "./packs";
 import { composeTheme, resolveTheme } from "./theme";
@@ -67,7 +68,7 @@ const DEFAULT_CELL: CellGeometry = { width: 8, height: 16, dotSize: 2 };
 const BUILDINGS_SOURCE_ID = "bad-map-buildings-source";
 const DEFAULT_HEATMAP_LAYER_ID = "bad-map-default-heatmap";
 const DEFAULT_FOG = {
-  visible: false,
+  visible: true,
   mode: "dithered",
   start: 0.55,
   end: 0.95,
@@ -146,6 +147,7 @@ export class LowResBasemap {
   #dataWorker: Worker | undefined;
   #workerFactory: () => Worker;
   #frame: RasterFrame | undefined;
+  #detailFrame: RasterFrame | undefined;
   #dataFrame: DataRasterFrame | undefined;
   #generation = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -265,14 +267,16 @@ export class LowResBasemap {
     });
     const provider = {
       frame: () => this.#frame,
+      detailFrame: () => this.#detailFrame,
       dataFrame: () => this.#dataFrame,
       viewState: () => this.#currentViewState(),
       theme: () => this.#theme,
       labelsVisible: () => this.#options.labels,
       labelsBillboard: () => this.#labelsBillboard,
       styleRevision: () => this.#styleRevision,
-      hoveredOwner: () => this.#hovered?.id ?? 0,
-      selectedOwner: () => this.#selectedOwner(),
+      hoveredOwner: (frame?: RasterFrame) =>
+        this.#featureOwner(frame, this.#hovered),
+      selectedOwner: (frame?: RasterFrame) => this.#selectedOwner(frame),
       projectionMode: () => this.#projectionMode,
       scalarPalette: () =>
         [
@@ -352,6 +356,7 @@ export class LowResBasemap {
     this.#dataWorker = undefined;
     this.#map = undefined;
     this.#frame = undefined;
+    this.#detailFrame = undefined;
     this.#dataFrame = undefined;
     this.#baseLayer = undefined;
     this.#dataLayer = undefined;
@@ -765,43 +770,46 @@ export class LowResBasemap {
   }
 
   queryFeatures(point: PointLike): LowResFeature[] {
-    const frame = this.#frame;
     const map = this.#map;
-    if (!frame || !map) return [];
+    if (!this.#frame || !map) return [];
     const screen = pointLike(point);
     const current = this.#currentViewState();
     if (!current) return [];
     const lngLat = map.unproject([screen.x, screen.y]);
-    const framePoint =
-      this.#projectionMode === "surface"
-        ? geographicFramePoint(frame.state, lngLat.lng, lngLat.lat)
-        : reprojectPoint(
-            [screen.x, screen.y],
-            reprojectionTransform(frame.state, current),
-          );
-    const frameColumn = Math.floor(framePoint[0] / frame.state.cell.width);
-    const frameRow = Math.floor(framePoint[1] / frame.state.cell.height);
-    if (
-      frameColumn < 0 ||
-      frameColumn >= frame.columns ||
-      frameRow < 0 ||
-      frameRow >= frame.rows
-    )
-      return [];
-    const owner = frame.owner[frameRow * frame.columns + frameColumn] ?? 0;
-    if (!owner) return [];
-    const record = frame.features[owner - 1];
-    if (!record) return [];
-    return [
-      {
-        ...record,
-        cell: {
-          column: Math.floor(screen.x / current.cell.width),
-          row: Math.floor(screen.y / current.cell.height),
+    for (const frame of [this.#detailFrame, this.#frame]) {
+      if (!frame) continue;
+      const framePoint =
+        this.#projectionMode === "surface"
+          ? geographicFramePoint(frame.state, lngLat.lng, lngLat.lat)
+          : reprojectPoint(
+              [screen.x, screen.y],
+              reprojectionTransform(frame.state, current),
+            );
+      const frameColumn = Math.floor(framePoint[0] / frame.state.cell.width);
+      const frameRow = Math.floor(framePoint[1] / frame.state.cell.height);
+      if (
+        frameColumn < 0 ||
+        frameColumn >= frame.columns ||
+        frameRow < 0 ||
+        frameRow >= frame.rows
+      )
+        continue;
+      const owner = frame.owner[frameRow * frame.columns + frameColumn] ?? 0;
+      if (!owner) return [];
+      const record = frame.features[owner - 1];
+      if (!record) return [];
+      return [
+        {
+          ...record,
+          cell: {
+            column: Math.floor(screen.x / current.cell.width),
+            row: Math.floor(screen.y / current.cell.height),
+          },
+          lngLat: { lng: lngLat.lng, lat: lngLat.lat },
         },
-        lngLat: { lng: lngLat.lng, lat: lngLat.lat },
-      },
-    ];
+      ];
+    }
+    return [];
   }
 
   queryDataFeatures(point: PointLike): LowResDataFeature[] {
@@ -963,14 +971,19 @@ export class LowResBasemap {
       this.#timer = undefined;
       if (!this.#map) return;
       this.#lastRenderRequest = performance.now();
-      const state = this.#renderViewState();
-      if (!state) return;
+      const plan = this.#renderViewStates();
+      if (!plan) return;
       this.#generation += 1;
-      this.#post({ type: "render", generation: this.#generation, state });
+      this.#post({
+        type: "render",
+        generation: this.#generation,
+        state: plan.coverage,
+        ...(plan.detail ? { detailState: plan.detail } : {}),
+      });
       this.#postData({
         type: "render",
         generation: this.#generation,
-        state,
+        state: plan.detail ?? plan.coverage,
       });
     };
     if (immediate) {
@@ -1002,6 +1015,7 @@ export class LowResBasemap {
     }
     if (message.frame.generation < (this.#frame?.generation ?? -1)) return;
     this.#frame = message.frame;
+    this.#detailFrame = message.detailFrame;
     for (const warning of message.frame.warnings) this.#emitError(warning);
     this.#map?.triggerRepaint();
     this.#emit("render", {
@@ -1105,7 +1119,8 @@ export class LowResBasemap {
   }
 
   #requestDataRender(): void {
-    const state = this.#renderViewState();
+    const plan = this.#renderViewStates();
+    const state = plan?.detail ?? plan?.coverage;
     if (!state || !this.#dataWorker) return;
     this.#generation += 1;
     this.#postData({ type: "render", generation: this.#generation, state });
@@ -1198,22 +1213,28 @@ export class LowResBasemap {
     };
   }
 
-  #renderViewState(): RasterViewState | undefined {
+  #renderViewStates():
+    { coverage: RasterViewState; detail?: RasterViewState } | undefined {
     const state = this.#currentViewState();
-    if (!state || this.#projectionMode === "screen") return state;
-    if (!this.#map) return { ...state, bearing: 0, pitch: 0 };
+    if (!state) return undefined;
+    if (this.#projectionMode === "screen") return { coverage: state };
+    if (!this.#map) return { coverage: { ...state, bearing: 0, pitch: 0 } };
     const corners = [
       this.#map.unproject([0, 0]),
       this.#map.unproject([state.width, 0]),
       this.#map.unproject([state.width, state.height]),
       this.#map.unproject([0, state.height]),
     ];
-    return fitSurfaceViewState(state, corners, {
+    const coverage = fitSurfaceViewState(state, corners, {
       maxDimension: Math.min(
         4096,
         Math.max(2048, Math.max(state.width, state.height) * 4),
       ),
     });
+    const detail = surfaceDetailViewState(state, coverage, {
+      maxDimension: 4096,
+    });
+    return { coverage, ...(detail ? { detail } : {}) };
   }
 
   #applyStyle(): void {
@@ -1228,12 +1249,24 @@ export class LowResBasemap {
     });
   }
 
-  #selectedOwner(): number {
-    if (!this.#selectedKey || !this.#frame) return 0;
-    const record = this.#frame.features.find(
+  #selectedOwner(frame = this.#detailFrame ?? this.#frame): number {
+    if (!this.#selectedKey || !frame) return 0;
+    const record = frame.features.find(
       (candidate) => featureKey(candidate) === this.#selectedKey,
     );
     return record?.id ?? 0;
+  }
+
+  #featureOwner(
+    frame: RasterFrame | undefined,
+    feature?: LowResFeature,
+  ): number {
+    if (!frame || !feature) return 0;
+    return (
+      frame.features.find(
+        (candidate) => featureKey(candidate) === featureKey(feature),
+      )?.id ?? 0
+    );
   }
 
   #reconfigure(): void {

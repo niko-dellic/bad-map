@@ -87,7 +87,8 @@ pan/zoom/rotation transform until the worker returns an exact replacement.
 `surface` mode maps the semantic frame to a flat Web Mercator quad. Bearing and
 pitch are supplied by MapLibre's public custom-layer matrix, so the lattice
 foreshortens with the surface. The raster frame follows the full camera ground
-footprint and trades semantic detail for bounded memory at extreme pitch.
+footprint, while a feathered full-zoom detail frame preserves near-field
+semantic detail and lattice density at extreme pitch without unbounded memory.
 Optional native building extrusions use OpenMapTiles height fields and occupy a
 stable slot between the semantic surface and application data. This is
 deliberately described as low-resolution 3D rather than terminal emulation.
