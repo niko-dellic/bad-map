@@ -12,6 +12,9 @@
 - Stable application-data, marker, and interaction insertion slots.
 - Pack-aware feature queries, GPU hover highlighting, and persistent selection.
 - Bearing-aware screen projection and an experimental pitched flat-surface mode.
+- Camera-footprint fitting for complete surface coverage at pitch, with bounded
+  worker resolution.
+- Optional theme-aware native 3D buildings from OpenMapTiles height fields.
 - A side-panel demo for appearance, cell, camera, pack, and source options.
 
 ### Changed

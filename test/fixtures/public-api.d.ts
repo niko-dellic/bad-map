@@ -4,7 +4,7 @@ export { DARK_THEME, LIGHT_THEME } from "./theme";
 export { composeTheme, greyscaleColor, relativeLuminance } from "./theme";
 export { featureMatches, landuse, marine, political, streets, topographic, transit, weather, } from "./packs";
 export { FillClass, LabelInk, LineClass, bandFor, effectiveStyleZoom, sourceZoom, } from "./style";
-export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResCameraOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTheme, RGB, } from "./types";
+export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResCameraOptions, LowResBuildings3DOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTheme, RGB, } from "./types";
 
 // dist/low-res-basemap.d.ts
 import { type Map as MapLibreMap, type PointLike } from "maplibre-gl";
@@ -14,6 +14,7 @@ export declare class LowResBasemap {
     #private;
     readonly layerIds: {
         readonly base: "bad-map-base";
+        readonly buildings: "bad-map-buildings-3d";
         readonly data: "bad-map-data";
         readonly markers: "bad-map-markers";
         readonly labels: "bad-map-labels";
@@ -29,6 +30,8 @@ export declare class LowResBasemap {
     setLabelsVisible(visible: boolean): this;
     setProjectionMode(mode: LowResProjectionMode): this;
     setCamera(options: LowResBasemapOptions["camera"]): this;
+    setBuildings3DVisible(visible: boolean): this;
+    getBuildings3DVisible(): boolean;
     setSource(source: LowResSource): this;
     setSources(sources: Record<string, LowResSource>): this;
     setLayers(layers: LowResLayerPackDescriptor[]): this;

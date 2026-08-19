@@ -19,7 +19,7 @@ geometry, independent labels, typed nonfatal failures, and public MapLibre APIs.
 | 3. Transit reference pack      | Foundation complete | Transit-only filtering, high-rank routes, stations through the point-label pipeline, stable ownership, and street coexistence                                     |
 | 4. Numeric and time-aware data | Foundation complete | Quantized scalar texture, weather and elevation defaults, `{time}` tile templates, runtime time updates, and time-keyed caches                                    |
 | 5. Visualization and picking   | Complete            | Data, marker, label, and interaction boundaries; owner-texture hover; persistent selection; pack/source-aware queries; filter helper                              |
-| 6. Rotation and 3D             | Experimental        | Bearing-aware screen mode and a flat world-space surface transformed by MapLibre's public camera matrix, including geographic picking                             |
+| 6. Rotation and 3D             | Experimental        | Bearing-aware screen mode, camera-footprint-fitted world surface, geographic picking, and optional theme-aware native building extrusions                         |
 
 The demo exposes the implemented appearance, lattice, camera, pack, source,
 and time options in a scrollable side panel. Greyscale is on by default.
@@ -61,7 +61,7 @@ do not run on the main thread or cross `postMessage` as functions.
 The public ordering contract is:
 
 ```text
-bad-map-base → bad-map-data → bad-map-markers → bad-map-labels → bad-map-interaction
+bad-map-base → bad-map-buildings-3d → bad-map-data → bad-map-markers → bad-map-labels → bad-map-interaction
 ```
 
 The middle IDs are no-op custom layers used as stable insertion boundaries.
@@ -76,8 +76,11 @@ pan/zoom/rotation transform until the worker returns an exact replacement.
 
 `surface` mode maps the semantic frame to a flat Web Mercator quad. Bearing and
 pitch are supplied by MapLibre's public custom-layer matrix, so the lattice
-foreshortens with the surface. This is deliberately described as
-low-resolution 3D rather than terminal emulation.
+foreshortens with the surface. The raster frame follows the full camera ground
+footprint and trades semantic detail for bounded memory at extreme pitch.
+Optional native building extrusions use OpenMapTiles height fields and occupy a
+stable slot between the semantic surface and application data. This is
+deliberately described as low-resolution 3D rather than terminal emulation.
 
 ## Production-depth roadmap
 
@@ -122,12 +125,14 @@ low-resolution 3D rather than terminal emulation.
 The current experimental surface is flat. A production 3D implementation
 should proceed in this order:
 
-1. Split fills, line dots, and markers into world-space meshes or instances.
-2. Replace the foreshortened label texture with anchored billboards and
+1. Add an optional quantized/dot-style building renderer alongside the current
+   smooth native extrusions.
+2. Split fills, line dots, and markers into world-space meshes or instances.
+3. Replace the foreshortened label texture with anchored billboards and
    screen-space collision.
-3. Fade labels and markers near the horizon.
-4. Sample MapLibre terrain elevation so primitives follow the ground.
-5. Make picking elevation-aware and test it over steep terrain.
+4. Fade labels and markers near the horizon.
+5. Sample MapLibre terrain elevation so primitives follow the ground.
+6. Make picking elevation-aware and test it over steep terrain.
 
 The screen renderer should remain independent: enabling terrain must never
 change its fixed square-dot grammar.

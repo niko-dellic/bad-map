@@ -52,6 +52,19 @@ export interface LowResCameraOptions {
   maxPitch?: number;
 }
 
+export interface LowResBuildings3DOptions {
+  /** Whether extruded buildings are shown. They are only visible in surface mode. */
+  visible?: boolean;
+  /** Named vector source containing the OpenMapTiles `building` layer. */
+  sourceId?: string;
+  /** Map zoom at which extrusions begin to appear. */
+  minZoom?: number;
+  /** Extrusion opacity from zero to one. */
+  opacity?: number;
+  /** Multiplier applied to `render_height` and `render_min_height`. */
+  heightScale?: number;
+}
+
 export interface CellGeometry {
   /** Character-cell width in CSS pixels. */
   width: number;
@@ -119,6 +132,8 @@ export interface LowResBasemapOptions {
   colorMode?: LowResColorMode;
   projectionMode?: LowResProjectionMode;
   camera?: LowResCameraOptions;
+  /** Native MapLibre building extrusions for the surface projection. */
+  buildings3D?: boolean | LowResBuildings3DOptions;
   cell?: Partial<CellGeometry>;
   locale?: string;
   labels?: boolean;
@@ -179,6 +194,10 @@ export interface LowResEventMap {
     target: LowResBasemapLike;
     mode: LowResProjectionMode;
   };
+  buildingschange: {
+    target: LowResBasemapLike;
+    visible: boolean;
+  };
   timechange: {
     target: LowResBasemapLike;
     sourceId: string;
@@ -189,6 +208,7 @@ export interface LowResEventMap {
 export interface LowResBasemapLike {
   readonly layerIds: {
     readonly base: string;
+    readonly buildings: string;
     readonly data: string;
     readonly markers: string;
     readonly labels: string;

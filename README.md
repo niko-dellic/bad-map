@@ -42,10 +42,11 @@ basemap.setLayerVisible("transit", true);
 
 ## Layer ordering
 
-Five stable IDs divide the render stack:
+Six stable IDs divide the render stack:
 
 ```ts
 basemap.layerIds.base; // fills and low-resolution linework
+basemap.layerIds.buildings; // optional native 3D building extrusions
 basemap.layerIds.data; // application data boundary
 basemap.layerIds.markers; // marker boundary
 basemap.layerIds.labels; // package labels
@@ -111,7 +112,9 @@ const basemap = new LowResBasemap({ camera: { rotation: true } });
 `surface` is an experimental low-resolution 3D mode. The semantic frame is
 placed on a flat Web Mercator plane and transformed with MapLibre's public
 custom-layer camera matrix, so dots and labels foreshorten during pitch and
-orbiting.
+orbiting. Its worker frame is fitted to the complete camera ground footprint,
+including the wider area visible toward the horizon, with bounded resolution
+at extreme pitch.
 
 ```ts
 basemap
@@ -119,9 +122,25 @@ basemap
   .setCamera({ rotation: true, pitch: true, maxPitch: 70 });
 ```
 
-Terrain elevation and billboard labels are not yet part of surface mode. The
-flat plane, bearing/pitch controls, and geographic feature picking are usable
-today without private MapLibre APIs.
+OpenMapTiles building heights can optionally be rendered as native MapLibre
+extrusions above the semantic surface and below application data:
+
+```ts
+const basemap = new LowResBasemap({
+  projectionMode: "surface",
+  buildings3D: { visible: true, minZoom: 14, opacity: 0.82 },
+});
+
+basemap.setBuildings3DVisible(false);
+```
+
+The building source defaults to the named `base` source and expects an
+OpenMapTiles `building` layer with `render_height`, `render_min_height`, and
+`hide_3d` properties. Extrusions use the active theme and greyscale mode. They
+are smooth native geometry by design; the semantic ground map retains its
+square-dot treatment. Sources requiring custom authorization should configure
+those requests through the host MapLibre map. Terrain elevation and billboard
+labels are not yet part of surface mode.
 
 ## Runtime API
 
@@ -133,9 +152,10 @@ today without private MapLibre APIs.
 - `setSource(...)`, `setSources(...)`, and `setSourceTime(...)`
 - `setLayers(...)`, `getLayers()`, and `setLayerVisible(...)`
 - `setProjectionMode(...)` and `setCamera(...)`
+- `setBuildings3DVisible(...)` and `getBuildings3DVisible()`
 - `setSelectedFeature(...)`, `queryFeatures(...)`, and `refresh()`
-- typed load, render, error, feature, selection, style, layer, time, and
-  projection events
+- typed load, render, error, feature, selection, style, layer, time,
+  projection, and 3D-building events
 
 Hover and persistent selection use the transferable owner texture. Query
 results include `sourceId` and `packId`, and `featureMatches` provides a helper

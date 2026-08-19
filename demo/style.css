@@ -144,6 +144,10 @@ input[type="range"] {
   accent-color: #bbb;
 }
 
+#bearing {
+  direction: rtl;
+}
+
 output {
   color: #d7d9e0;
 }

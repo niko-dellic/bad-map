@@ -1,10 +1,12 @@
 import {
   AttributionControl,
+  type FillExtrusionLayerSpecification,
   type Map as MapLibreMap,
   type PointLike,
 } from "maplibre-gl";
 import { BaseLayer, LabelsLayer, SlotLayer } from "./render";
 import {
+  fitSurfaceViewState,
   lngLatToWorld,
   reprojectPoint,
   reprojectionTransform,
@@ -14,6 +16,7 @@ import { composeTheme, resolveTheme } from "./theme";
 import type {
   CellGeometry,
   LowResBasemapOptions,
+  LowResBuildings3DOptions,
   LowResColorMode,
   LowResError,
   LowResEventMap,
@@ -33,6 +36,7 @@ const DEFAULT_SOURCE: LowResSource = {
 };
 
 const DEFAULT_CELL: CellGeometry = { width: 8, height: 16, dotSize: 2 };
+const BUILDINGS_SOURCE_ID = "bad-map-buildings-source";
 
 type Listener<K extends keyof LowResEventMap> = (
   event: LowResEventMap[K],
@@ -41,6 +45,7 @@ type Listener<K extends keyof LowResEventMap> = (
 export class LowResBasemap {
   readonly layerIds = {
     base: "bad-map-base",
+    buildings: "bad-map-buildings-3d",
     data: "bad-map-data",
     markers: "bad-map-markers",
     labels: "bad-map-labels",
@@ -65,6 +70,7 @@ export class LowResBasemap {
   #theme: LowResTheme;
   #colorMode: LowResColorMode;
   #projectionMode: LowResProjectionMode;
+  #buildings3D: Required<LowResBuildings3DOptions>;
   #camera: { rotation: boolean; pitch: boolean; maxPitch: number };
   #styleRevision = 0;
   #map: MapLibreMap | undefined;
@@ -103,6 +109,7 @@ export class LowResBasemap {
     this.#baseTheme = resolveTheme(options.theme);
     this.#colorMode = validateColorMode(options.colorMode ?? "greyscale");
     this.#projectionMode = options.projectionMode ?? "screen";
+    this.#buildings3D = normalizeBuildings3D(options.buildings3D);
     const surface = this.#projectionMode === "surface";
     this.#camera = {
       rotation: options.camera?.rotation ?? surface,
@@ -166,6 +173,7 @@ export class LowResBasemap {
     this.#baseLayer = new BaseLayer(this.layerIds.base, provider);
     this.#labelsLayer = new LabelsLayer(this.layerIds.labels, provider);
     map.addLayer(this.#baseLayer);
+    this.#ensureBuildings3DLayer();
     map.addLayer(new SlotLayer(this.layerIds.data));
     map.addLayer(new SlotLayer(this.layerIds.markers));
     map.addLayer(this.#labelsLayer);
@@ -202,9 +210,12 @@ export class LowResBasemap {
       this.layerIds.labels,
       this.layerIds.markers,
       this.layerIds.data,
+      this.layerIds.buildings,
       this.layerIds.base,
     ])
       if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource(BUILDINGS_SOURCE_ID))
+      map.removeSource(BUILDINGS_SOURCE_ID);
     if (this.#attribution) map.removeControl(this.#attribution);
     this.#restoreNorthUp(map);
     this.#post({ type: "dispose" });
@@ -257,6 +268,7 @@ export class LowResBasemap {
     if (mode === this.#projectionMode) return this;
     this.#projectionMode = mode;
     if (this.#map) this.#configureCamera(this.#map, true);
+    this.#syncBuildings3DVisibility();
     this.refresh();
     this.#emit("projectionchange", { target: this, mode });
     return this;
@@ -271,6 +283,19 @@ export class LowResBasemap {
     return this;
   }
 
+  setBuildings3DVisible(visible: boolean): this {
+    if (visible === this.#buildings3D.visible) return this;
+    this.#buildings3D.visible = visible;
+    this.#ensureBuildings3DLayer();
+    this.#syncBuildings3DVisibility();
+    this.#emit("buildingschange", { target: this, visible });
+    return this;
+  }
+
+  getBuildings3DVisible(): boolean {
+    return this.#buildings3D.visible;
+  }
+
   setSource(source: LowResSource): this {
     return this.setSources({ ...this.#sources, base: source });
   }
@@ -279,6 +304,7 @@ export class LowResBasemap {
     if (!Object.keys(sources).length)
       throw new TypeError("At least one named source is required");
     this.#sources = { ...sources };
+    this.#rebuildBuildings3DLayer();
     this.#post({
       type: "configure",
       sources: this.#sources,
@@ -488,12 +514,25 @@ export class LowResBasemap {
   #renderViewState(): RasterViewState | undefined {
     const state = this.#currentViewState();
     if (!state || this.#projectionMode === "screen") return state;
-    return { ...state, bearing: 0, pitch: 0 };
+    if (!this.#map) return { ...state, bearing: 0, pitch: 0 };
+    const corners = [
+      this.#map.unproject([0, 0]),
+      this.#map.unproject([state.width, 0]),
+      this.#map.unproject([state.width, state.height]),
+      this.#map.unproject([0, state.height]),
+    ];
+    return fitSurfaceViewState(state, corners, {
+      maxDimension: Math.min(
+        4096,
+        Math.max(2048, Math.max(state.width, state.height) * 4),
+      ),
+    });
   }
 
   #applyStyle(): void {
     this.#theme = composeTheme(this.#baseTheme, this.#colorMode);
     this.#styleRevision += 1;
+    this.#applyBuildings3DStyle();
     this.#map?.triggerRepaint();
     this.#emit("stylechange", {
       target: this,
@@ -538,6 +577,125 @@ export class LowResBasemap {
       customAttribution: this.#sourceAttribution(),
     });
     this.#map.addControl(this.#attribution, "bottom-right");
+  }
+
+  #ensureBuildings3DLayer(): void {
+    const map = this.#map;
+    if (!map || map.getLayer(this.layerIds.buildings)) return;
+    const source = this.#sources[this.#buildings3D.sourceId];
+    if (!source) {
+      this.#emitError({
+        code: "source",
+        message: `Unknown 3D building source: ${this.#buildings3D.sourceId}`,
+        fatal: false,
+        sourceId: this.#buildings3D.sourceId,
+      });
+      return;
+    }
+    try {
+      if (!map.getSource(BUILDINGS_SOURCE_ID))
+        map.addSource(BUILDINGS_SOURCE_ID, {
+          type: "vector",
+          url: source.tileJSON,
+        });
+      const layer: FillExtrusionLayerSpecification = {
+        id: this.layerIds.buildings,
+        type: "fill-extrusion",
+        source: BUILDINGS_SOURCE_ID,
+        "source-layer": "building",
+        minzoom: this.#buildings3D.minZoom,
+        filter: ["!=", ["get", "hide_3d"], true],
+        layout: {
+          visibility:
+            this.#projectionMode === "surface" && this.#buildings3D.visible
+              ? "visible"
+              : "none",
+        },
+        paint: this.#buildings3DPaint(),
+      };
+      map.addLayer(
+        layer,
+        map.getLayer(this.layerIds.data) ? this.layerIds.data : undefined,
+      );
+    } catch (cause) {
+      this.#emitError({
+        code: "source",
+        message: "Could not create the 3D building layer",
+        fatal: false,
+        cause,
+        sourceId: this.#buildings3D.sourceId,
+      });
+    }
+  }
+
+  #rebuildBuildings3DLayer(): void {
+    const map = this.#map;
+    if (!map) return;
+    if (map.getLayer(this.layerIds.buildings))
+      map.removeLayer(this.layerIds.buildings);
+    if (map.getSource(BUILDINGS_SOURCE_ID))
+      map.removeSource(BUILDINGS_SOURCE_ID);
+    this.#ensureBuildings3DLayer();
+  }
+
+  #syncBuildings3DVisibility(): void {
+    const map = this.#map;
+    if (!map) return;
+    this.#ensureBuildings3DLayer();
+    if (!map.getLayer(this.layerIds.buildings)) return;
+    map.setLayoutProperty(
+      this.layerIds.buildings,
+      "visibility",
+      this.#projectionMode === "surface" && this.#buildings3D.visible
+        ? "visible"
+        : "none",
+    );
+  }
+
+  #applyBuildings3DStyle(): void {
+    const map = this.#map;
+    if (!map?.getLayer(this.layerIds.buildings)) return;
+    const paint = this.#buildings3DPaint();
+    for (const [property, value] of Object.entries(paint))
+      map.setPaintProperty(this.layerIds.buildings, property, value);
+  }
+
+  #buildings3DPaint(): NonNullable<FillExtrusionLayerSpecification["paint"]> {
+    const scale = this.#buildings3D.heightScale;
+    const height: ["*", ["coalesce", ["get", string], number], number] = [
+      "*",
+      ["coalesce", ["get", "render_height"], 6],
+      scale,
+    ];
+    const base: ["*", ["coalesce", ["get", string], number], number] = [
+      "*",
+      ["coalesce", ["get", "render_min_height"], 0],
+      scale,
+    ];
+    const minZoom = this.#buildings3D.minZoom;
+    return {
+      "fill-extrusion-color": rgbCss(this.#theme.fills.building),
+      "fill-extrusion-height": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        minZoom,
+        0,
+        minZoom + 1,
+        height,
+      ],
+      "fill-extrusion-base": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        minZoom,
+        0,
+        minZoom + 1,
+        base,
+      ],
+      "fill-extrusion-opacity": this.#buildings3D.opacity,
+      "fill-extrusion-vertical-gradient": true,
+    };
   }
 
   #configureCamera(map: MapLibreMap, preserveOriginal = false): void {
@@ -604,6 +762,37 @@ function validateColorMode(colorMode: LowResColorMode): LowResColorMode {
   if (colorMode !== "color" && colorMode !== "greyscale")
     throw new TypeError(`Unsupported color mode: ${String(colorMode)}`);
   return colorMode;
+}
+
+function normalizeBuildings3D(
+  options: LowResBasemapOptions["buildings3D"],
+): Required<LowResBuildings3DOptions> {
+  const configured = typeof options === "object" ? options : {};
+  const result = {
+    visible:
+      typeof options === "boolean" ? options : (configured.visible ?? false),
+    sourceId: configured.sourceId ?? "base",
+    minZoom: configured.minZoom ?? 14,
+    opacity: configured.opacity ?? 0.82,
+    heightScale: configured.heightScale ?? 1,
+  };
+  if (!result.sourceId.trim())
+    throw new TypeError("buildings3D.sourceId cannot be empty");
+  if (!Number.isFinite(result.minZoom) || result.minZoom < 0)
+    throw new RangeError("buildings3D.minZoom must be non-negative");
+  if (
+    !Number.isFinite(result.opacity) ||
+    result.opacity < 0 ||
+    result.opacity > 1
+  )
+    throw new RangeError("buildings3D.opacity must be between zero and one");
+  if (!Number.isFinite(result.heightScale) || result.heightScale < 0)
+    throw new RangeError("buildings3D.heightScale must be non-negative");
+  return result;
+}
+
+function rgbCss(color: readonly [number, number, number]): string {
+  return `rgb(${color[0]} ${color[1]} ${color[2]})`;
 }
 
 function pointLike(point: PointLike): { x: number; y: number } {

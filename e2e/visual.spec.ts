@@ -64,8 +64,9 @@ test("matches settled city, theme, and greyscale baselines", async ({
       }
     ).__badMapDemo;
     demo.basemap.setTheme("dark");
+    const previousGeneration = demo.diagnostics.lastGeneration;
     demo.map.jumpTo({ center: [-122.6765, 45.5231], zoom: 13.8 });
-    return demo.diagnostics.lastGeneration;
+    return previousGeneration;
   });
   await expect
     .poll(() =>
@@ -136,6 +137,7 @@ test("matches the experimental pitched surface baseline", async ({ page }) => {
             setProjectionMode(mode: string): {
               setCamera(options: unknown): void;
             };
+            setBuildings3DVisible(visible: boolean): void;
           };
           diagnostics: { lastGeneration: number };
         };
@@ -144,8 +146,10 @@ test("matches the experimental pitched surface baseline", async ({ page }) => {
     demo.basemap
       .setProjectionMode("surface")
       .setCamera({ rotation: true, pitch: true, maxPitch: 70 });
+    demo.basemap.setBuildings3DVisible(true);
+    const previousGeneration = demo.diagnostics.lastGeneration;
     demo.map.jumpTo({ bearing: 18, pitch: 45 });
-    return demo.diagnostics.lastGeneration;
+    return previousGeneration;
   });
   await expect
     .poll(() =>
@@ -159,6 +163,17 @@ test("matches the experimental pitched surface baseline", async ({ page }) => {
       ),
     )
     .toBeGreaterThan(generation);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as typeof window & {
+            __badMapDemo: { map: { areTilesLoaded(): boolean } };
+          }
+        ).__badMapDemo.map.areTilesLoaded(),
+      ),
+    )
+    .toBe(true);
   await expect(page).toHaveScreenshot("nyc-surface.png", {
     animations: "disabled",
   });

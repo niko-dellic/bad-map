@@ -172,11 +172,13 @@ cellWidth.oninput = applyCell;
 cellHeight.oninput = applyCell;
 dotSize.oninput = applyCell;
 let large = false;
-document.querySelector<HTMLButtonElement>("#cells")!.onclick = () => {
+const cellPreset = document.querySelector<HTMLButtonElement>("#cells")!;
+cellPreset.onclick = () => {
   large = !large;
   cellWidth.value = large ? "12" : "8";
   cellHeight.value = large ? "24" : "16";
   dotSize.value = large ? "3" : "2";
+  cellPreset.textContent = large ? "smaller cell preset" : "larger cell preset";
   applyCell();
 };
 
@@ -186,6 +188,7 @@ const locale = document.querySelector<HTMLSelectElement>("#locale")!;
 locale.onchange = () => basemap.setLocale(locale.value);
 
 const projection = document.querySelector<HTMLSelectElement>("#projection")!;
+const buildings3D = document.querySelector<HTMLInputElement>("#buildings-3d")!;
 const rotation = document.querySelector<HTMLInputElement>("#rotation")!;
 const bearing = document.querySelector<HTMLInputElement>("#bearing")!;
 const pitch = document.querySelector<HTMLInputElement>("#pitch")!;
@@ -195,16 +198,28 @@ const updateCameraLabels = () => {
   document.querySelector("#pitch-value")!.textContent =
     `${Math.round(map.getPitch())}°`;
 };
-projection.onchange = () => {
+const applyProjection = () => {
   const surface = projection.value === "surface";
   pitch.disabled = !surface;
   rotation.checked = surface || rotation.checked;
+  if (!surface) {
+    buildings3D.checked = false;
+    basemap.setBuildings3DVisible(false);
+  }
   basemap.setProjectionMode(surface ? "surface" : "screen").setCamera({
     rotation: rotation.checked,
     pitch: surface,
     maxPitch: 70,
   });
   map.easeTo({ pitch: surface ? Number(pitch.value) || 45 : 0, duration: 450 });
+};
+projection.onchange = applyProjection;
+buildings3D.onchange = () => {
+  if (buildings3D.checked && projection.value !== "surface") {
+    projection.value = "surface";
+    applyProjection();
+  }
+  basemap.setBuildings3DVisible(buildings3D.checked);
 };
 rotation.onchange = () =>
   basemap.setCamera({

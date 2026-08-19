@@ -3,6 +3,7 @@ import {
   bresenham,
   dilate,
   erode,
+  fitSurfaceViewState,
   gridSize,
   lngLatToWorld,
   reprojectPoint,
@@ -115,5 +116,57 @@ describe("geometry", () => {
     const current = { ...state, center: { lng: -179.9, lat: 0 } };
     const transform = reprojectionTransform(frame, current);
     expect(Math.abs(transform.offset[0])).toBeLessThan(20);
+  });
+
+  it("fits a bounded worker view around an asymmetric camera footprint", () => {
+    const result = fitSurfaceViewState(
+      { ...state, zoom: 15, bearing: 28, pitch: 60 },
+      [
+        { lng: -74.04, lat: 40.79 },
+        { lng: -73.95, lat: 40.8 },
+        { lng: -73.98, lat: 40.69 },
+        { lng: -74.02, lat: 40.69 },
+      ],
+      { overscan: 0, maxDimension: 2048 },
+    );
+    expect(result.bearing).toBe(0);
+    expect(result.pitch).toBe(0);
+    expect(Math.max(result.width, result.height)).toBeLessThanOrEqual(2049);
+    expect(result.zoom).toBeLessThan(15);
+    expect(result.center.lat).toBeGreaterThan(40.74);
+
+    const [centerX, centerY] = lngLatToWorld(
+      result.center.lng,
+      result.center.lat,
+    );
+    const halfX = result.width / (2 * 512 * 2 ** result.zoom);
+    const halfY = result.height / (2 * 512 * 2 ** result.zoom);
+    for (const corner of [
+      { lng: -74.04, lat: 40.79 },
+      { lng: -73.95, lat: 40.8 },
+      { lng: -73.98, lat: 40.69 },
+      { lng: -74.02, lat: 40.69 },
+    ]) {
+      const [x, y] = lngLatToWorld(corner.lng, corner.lat);
+      expect(x).toBeGreaterThanOrEqual(centerX - halfX - 1e-7);
+      expect(x).toBeLessThanOrEqual(centerX + halfX + 1e-7);
+      expect(y).toBeGreaterThanOrEqual(centerY - halfY - 1e-7);
+      expect(y).toBeLessThanOrEqual(centerY + halfY + 1e-7);
+    }
+  });
+
+  it("fits surface footprints across the antimeridian by the short path", () => {
+    const result = fitSurfaceViewState(
+      { ...state, center: { lng: 179.9, lat: 0 } },
+      [
+        { lng: 179.7, lat: 0.2 },
+        { lng: -179.8, lat: 0.2 },
+        { lng: -179.8, lat: -0.2 },
+        { lng: 179.7, lat: -0.2 },
+      ],
+      { overscan: 0 },
+    );
+    expect(Math.abs(result.center.lng)).toBeGreaterThan(179);
+    expect(result.width).toBeLessThan(100);
   });
 });

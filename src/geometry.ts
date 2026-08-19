@@ -21,6 +21,73 @@ export function worldToLngLat(x: number, y: number): Point {
   return [lng, (180 / Math.PI) * Math.atan(Math.sinh(n))];
 }
 
+export interface SurfaceViewFitOptions {
+  /** Extra geographic coverage around the camera footprint. */
+  overscan?: number;
+  /** Maximum CSS-pixel side of the worker frame. */
+  maxDimension?: number;
+}
+
+/**
+ * Produces a north-up worker view that contains the ground footprint visible
+ * through a pitched MapLibre camera. When the footprint becomes very large,
+ * zoom is reduced with the frame dimensions so its geographic coverage stays
+ * exact without allocating an unbounded semantic texture.
+ */
+export function fitSurfaceViewState(
+  state: RasterViewState,
+  groundCorners: readonly { lng: number; lat: number }[],
+  options: SurfaceViewFitOptions = {},
+): RasterViewState {
+  const fallback = { ...state, bearing: 0, pitch: 0 };
+  if (groundCorners.length < 4) return fallback;
+
+  const [referenceX] = lngLatToWorld(state.center.lng, state.center.lat);
+  const points = groundCorners.map(({ lng, lat }) => {
+    let [x, y] = lngLatToWorld(lng, lat);
+    while (x - referenceX > 0.5) x -= 1;
+    while (x - referenceX < -0.5) x += 1;
+    return [x, y] as const;
+  });
+  if (points.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y)))
+    return fallback;
+
+  let minX = Math.min(...points.map(([x]) => x));
+  let maxX = Math.max(...points.map(([x]) => x));
+  let minY = Math.min(...points.map(([, y]) => y));
+  let maxY = Math.max(...points.map(([, y]) => y));
+  const overscan = Math.max(0, options.overscan ?? 0.06);
+  const paddingX = Math.max(maxX - minX, Number.EPSILON) * overscan;
+  const paddingY = Math.max(maxY - minY, Number.EPSILON) * overscan;
+  minX -= paddingX;
+  maxX += paddingX;
+  minY -= paddingY;
+  maxY += paddingY;
+
+  const worldSize = 512 * 2 ** state.zoom;
+  const rawWidth = (maxX - minX) * worldSize;
+  const rawHeight = (maxY - minY) * worldSize;
+  if (!(rawWidth > 0) || !(rawHeight > 0)) return fallback;
+
+  const maxDimension = Math.max(256, options.maxDimension ?? 4096);
+  const scale = Math.min(1, maxDimension / rawWidth, maxDimension / rawHeight);
+  const zoom = Math.max(0, state.zoom + Math.log2(scale));
+  const [lng, lat] = worldToLngLat((minX + maxX) / 2, (minY + maxY) / 2);
+  return {
+    ...state,
+    center: { lng: normalizeLongitude(lng), lat },
+    zoom,
+    bearing: 0,
+    pitch: 0,
+    width: Math.max(1, Math.ceil(rawWidth * scale)),
+    height: Math.max(1, Math.ceil(rawHeight * scale)),
+  };
+}
+
+function normalizeLongitude(lng: number): number {
+  return ((((lng + 180) % 360) + 360) % 360) - 180;
+}
+
 export interface ReprojectionTransform {
   /** Multiplier from current CSS pixels to pixels in the completed frame. */
   scale: number;

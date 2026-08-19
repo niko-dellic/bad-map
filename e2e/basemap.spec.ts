@@ -139,6 +139,112 @@ test("exposes stable slots and switches between bearing and surface cameras", as
   await expect(page.locator("#pitch")).toBeEnabled();
 });
 
+test("keeps the bearing slider aligned with mouse rotation", async ({
+  page,
+}) => {
+  const bearing = page.locator("#bearing");
+  await page.locator("#rotation").check();
+
+  await page.mouse.move(400, 300);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(500, 300, { steps: 10 });
+  await page.mouse.up({ button: "right" });
+  const mouseBearing = await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __badMapDemo: { map: { getBearing(): number } };
+      }
+    ).__badMapDemo.map.getBearing(),
+  );
+  expect(mouseBearing).toBeLessThan(0);
+
+  await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __badMapDemo: { map: { setBearing(value: number): void } };
+      }
+    ).__badMapDemo.map.setBearing(0),
+  );
+  const box = await bearing.boundingBox();
+  expect(box).not.toBeNull();
+  await bearing.click({
+    position: { x: box!.width * 0.75, y: box!.height / 2 },
+  });
+
+  const sliderBearing = await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __badMapDemo: { map: { getBearing(): number } };
+      }
+    ).__badMapDemo.map.getBearing(),
+  );
+  expect(sliderBearing).toBeLessThan(0);
+  await expect(bearing).toHaveCSS("direction", "rtl");
+});
+
+test("toggles theme-aware 3D buildings in the surface stack", async ({
+  page,
+}) => {
+  await page.locator("#buildings-3d").check();
+  await expect(page.locator("#projection")).toHaveValue("surface");
+  const enabled = await page.evaluate(() => {
+    const { map, basemap } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: {
+            getLayersOrder(): string[];
+            getLayoutProperty(id: string, property: string): unknown;
+            getPaintProperty(id: string, property: string): unknown;
+          };
+          basemap: {
+            layerIds: {
+              base: string;
+              buildings: string;
+              data: string;
+            };
+            getBuildings3DVisible(): boolean;
+          };
+        };
+      }
+    ).__badMapDemo;
+    const ids = map.getLayersOrder();
+    return {
+      requested: basemap.getBuildings3DVisible(),
+      visibility: map.getLayoutProperty(
+        basemap.layerIds.buildings,
+        "visibility",
+      ),
+      color: map.getPaintProperty(
+        basemap.layerIds.buildings,
+        "fill-extrusion-color",
+      ),
+      baseIndex: ids.indexOf(basemap.layerIds.base),
+      buildingIndex: ids.indexOf(basemap.layerIds.buildings),
+      dataIndex: ids.indexOf(basemap.layerIds.data),
+    };
+  });
+  expect(enabled.requested).toBe(true);
+  expect(enabled.visibility).toBe("visible");
+  expect(enabled.color).toMatch(/^rgb/);
+  expect(enabled.baseIndex).toBeLessThan(enabled.buildingIndex);
+  expect(enabled.buildingIndex).toBeLessThan(enabled.dataIndex);
+
+  await page.locator("#projection").selectOption("screen");
+  await expect(page.locator("#buildings-3d")).not.toBeChecked();
+  const disabled = await page.evaluate(() => {
+    const { map, basemap } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { getLayoutProperty(id: string, property: string): unknown };
+          basemap: { layerIds: { buildings: string } };
+        };
+      }
+    ).__badMapDemo;
+    return map.getLayoutProperty(basemap.layerIds.buildings, "visibility");
+  });
+  expect(disabled).toBe("none");
+});
+
 test("collapses the settings panel without hiding hover information", async ({
   page,
 }) => {
@@ -168,6 +274,27 @@ test("collapses the settings panel without hiding hover information", async ({
   await page.locator("#settings-toggle").click();
   await expect(settings).not.toHaveClass(/is-collapsed/);
   await expect(settings.locator("section").first()).toBeVisible();
+});
+
+test("groups semantic controls and names the next cell preset", async ({
+  page,
+}) => {
+  for (const control of ["#labels", "#buildings-3d"]) {
+    await expect(
+      page.locator(control).locator("xpath=ancestor::section/h2"),
+    ).toHaveText("Semantic packs");
+  }
+
+  const preset = page.locator("#cells");
+  await expect(preset).toHaveText("larger cell preset");
+  await preset.click();
+  await expect(preset).toHaveText("smaller cell preset");
+  await expect(page.locator("#cell-width-value")).toHaveText("12");
+  await expect(page.locator("#cell-height-value")).toHaveText("24");
+  await preset.click();
+  await expect(preset).toHaveText("larger cell preset");
+  await expect(page.locator("#cell-width-value")).toHaveText("8");
+  await expect(page.locator("#cell-height-value")).toHaveText("16");
 });
 
 test("keeps producing exact frames after pan, zoom, and resize", async ({

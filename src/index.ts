@@ -27,6 +27,7 @@ export type {
   LowResBasemapOptions,
   LowResColorMode,
   LowResCameraOptions,
+  LowResBuildings3DOptions,
   LowResError,
   LowResEventMap,
   LowResFeature,
