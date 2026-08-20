@@ -5,7 +5,8 @@ documentation fixes, tests, and implementation work are welcome.
 
 ## Before opening an issue
 
-- Search existing issues and `NEXT_STEPS.md` for related work.
+- Search existing issues and the [project roadmap](./docs/NEXT_STEPS.md) for
+  related work.
 - Use a minimal reproduction for rendering or integration bugs.
 - Include the browser, operating system, MapLibre version, projection mode,
   relevant package options, and the smallest data sample that reproduces the

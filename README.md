@@ -401,7 +401,7 @@ the host application.
 ## Development
 
 The repository is organized by internal domain while publishing one npm
-package. See [ARCHITECTURE.md](./ARCHITECTURE.md) for module boundaries and the
+package. See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for module boundaries and the
 expected extension path for new data-layer types.
 
 ```sh
@@ -422,7 +422,7 @@ Before submitting a change, read the
 Security issues should follow the
 [security policy](https://github.com/niko-dellic/bad-map/blob/main/SECURITY.md),
 not a public issue. The
-[release checklist](https://github.com/niko-dellic/bad-map/blob/main/RELEASING.md)
+[release checklist](https://github.com/niko-dellic/bad-map/blob/main/docs/RELEASING.md)
 documents the maintainer workflow.
 
 Useful individual commands:
@@ -437,6 +437,6 @@ npm run test:e2e
 ```
 
 See the
-[project roadmap](https://github.com/niko-dellic/bad-map/blob/main/NEXT_STEPS.md)
+[project roadmap](https://github.com/niko-dellic/bad-map/blob/main/docs/NEXT_STEPS.md)
 for implementation status and remaining production-depth work around terrain,
 animated fields, and dense picking.
