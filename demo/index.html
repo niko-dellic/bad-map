@@ -435,23 +435,24 @@
                 Enabled</label
               >
               <label
-                >Lens strength <output id="fisheye-lens-value">35%</output
+                >Broad curvature (k1)
+                <output id="fisheye-k1-value">-0.35</output
                 ><input
-                  id="fisheye-lens"
+                  id="fisheye-k1"
                   type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value="0.35"
+                  min="-2"
+                  max="2"
+                  step="0.05"
+                  value="-0.35"
               /></label>
               <label
-                >Edge focus <output id="fisheye-edge-focus-value">0%</output
+                >Edge curvature (k2) <output id="fisheye-k2-value">0.00</output
                 ><input
-                  id="fisheye-edge-focus"
+                  id="fisheye-k2"
                   type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
+                  min="-2"
+                  max="2"
+                  step="0.05"
                   value="0"
               /></label>
               <label
@@ -468,7 +469,7 @@
                 id="fisheye-status"
                 class="section-status"
                 aria-live="polite"
-                >35% lens · 0% edge focus</output
+                >broad -0.35 · edge 0.00</output
               >
             </section>
           </div>

@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0e0f12" />
+    <meta
+      name="description"
+      content="Documentation for bad-map, a semantic low-resolution cartography toolkit for MapLibre GL JS."
+    />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="/docs/docs.css" />
+    <title>bad-map docs — use it irresponsibly</title>
+  </head>
+  <body>
+    <header>
+      <nav aria-label="Primary navigation">
+        <a href="/">bad-map</a>
+        <a href="/demo/">demo</a>
+        <a href="https://www.npmjs.com/package/bad-map">npm</a>
+        <a href="https://github.com/niko-dellic/bad-map">github</a>
+      </nav>
+      <h1>bad-map docs</h1>
+      <p>
+        The part where a deliberately unreliable-looking map is documented
+        carefully.
+      </p>
+    </header>
+
+    <main>
+      <nav aria-label="Documentation contents">
+        <strong>contents</strong>
+        <ol>
+          <li><a href="#install">install</a></li>
+          <li><a href="#quick-start">quick start</a></li>
+          <li><a href="#functionality">functionality</a></li>
+          <li><a href="#plays-with">what it plays with</a></li>
+          <li><a href="#data">data layers</a></li>
+          <li><a href="#camera">camera modes</a></li>
+          <li><a href="#runtime">runtime controls</a></li>
+          <li><a href="#demo-package">demo versus package</a></li>
+          <li><a href="#limitations">limitations</a></li>
+        </ol>
+      </nav>
+
+      <section id="install">
+        <h2>Install</h2>
+        <pre><code>npm install bad-map maplibre-gl</code></pre>
+        <p>
+          MapLibre GL JS is a peer dependency. The default keyless tile source
+          is OpenFreeMap.
+        </p>
+      </section>
+
+      <section id="quick-start">
+        <h2>Quick start</h2>
+        <pre><code>import { Map } from "maplibre-gl";
+import { LowResBasemap, streets, transit } from "bad-map";
+import "maplibre-gl/dist/maplibre-gl.css";
+
+const map = new Map({
+  container: "map",
+  center: [-74.006, 40.7128],
+  zoom: 14,
+  style: { version: 8, sources: {}, layers: [] },
+});
+
+const basemap = new LowResBasemap({
+  source: { tileJSON: "https://tiles.openfreemap.org/planet" },
+  layers: [streets(), transit({ enabled: false, priority: 20 })],
+  colorMode: "greyscale",
+  cell: { width: 8, height: 16, dotSize: 2 },
+});
+
+await basemap.addTo(map);
+basemap.setLayerVisible("transit", true);</code></pre>
+        <p>
+          Give the MapLibre container an explicit size. Create and attach the
+          basemap in the browser after that container exists.
+        </p>
+      </section>
+
+      <section id="functionality">
+        <h2>Functionality</h2>
+        <p>
+          <code>bad-map</code> renders vector-tile meaning onto a coarse
+          square-dot lattice. It does not pixelate a screenshot of a finished
+          map.
+        </p>
+        <ul>
+          <li>
+            Semantic packs for streets, transit, topographic, weather,
+            political, marine, and land-use data.
+          </li>
+          <li>
+            Dark and light themes, greyscale or color, configurable cell and dot
+            sizes, labels, locale, and feature interaction.
+          </li>
+          <li>
+            Named MVT sources with TileJSON discovery, request concurrency,
+            retry, cache, and time-key controls.
+          </li>
+          <li>
+            Stable render slots for basemap, buildings, data, markers, labels,
+            fog, and interaction.
+          </li>
+          <li>
+            Optional dithered or regular atmospheric fog and native 3D
+            OpenMapTiles building extrusions.
+          </li>
+        </ul>
+      </section>
+
+      <section id="plays-with">
+        <h2>What it plays with</h2>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Thing</th>
+              <th scope="col">Relationship</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">MapLibre GL JS</th>
+              <td>The host map and required peer dependency.</td>
+            </tr>
+            <tr>
+              <th scope="row">OpenFreeMap</th>
+              <td>The default keyless vector-tile source.</td>
+            </tr>
+            <tr>
+              <th scope="row">MVT / OpenMapTiles</th>
+              <td>
+                Built-in packs read MVT and expect OpenMapTiles property
+                conventions. Custom named MVT sources are supported.
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Native MapLibre layers</th>
+              <td>
+                Insert them into the stable layer slots. They remain crisp,
+                interactive, and outside basemap theme changes.
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">deck.gl</th>
+              <td>
+                It can coexist with deck.gl layers and consume the same parsed
+                datasets, but has no deck.gl runtime dependency.
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">SSR frameworks</th>
+              <td>
+                Import and initialize from a client-only component. Rendering
+                the map on the server is out of scope.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="data">
+        <h2>Data layers</h2>
+        <p>
+          Package-owned layers are registered by ID and rendered below labels.
+          Their palettes stay intact when the basemap switches to greyscale.
+        </p>
+        <dl>
+          <dt><code>heatmap</code></dt>
+          <dd>
+            Weighted <code>[longitude, latitude, weight]</code> triplets,
+            accumulated and dithered on the worker.
+          </dd>
+          <dt><code>geojson</code></dt>
+          <dd>
+            Points, lines, polygons, multi-geometries, and geometry collections
+            with constant or accessor-based styling.
+          </dd>
+          <dt><code>waypoint</code></dt>
+          <dd>
+            Lattice-aligned locator targets and caret glyphs with optional
+            per-item styling.
+          </dd>
+          <dt><code>trips</code></dt>
+          <dd>
+            Timestamped paths with play, pause, seek, step, loop, speed, and
+            trail controls.
+          </dd>
+        </dl>
+        <p>
+          Picking is available through <code>queryDataFeatures</code> and typed
+          enter, leave, and click events. Fetching input URLs remains the host
+          application's job.
+        </p>
+      </section>
+
+      <section id="camera">
+        <h2>Camera modes</h2>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Mode</th>
+              <th scope="col">Use it when</th>
+              <th scope="col">Behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row"><code>surface</code></th>
+              <td>You want pitch, rotation, fog, or buildings.</td>
+              <td>
+                The default. Dots sit on a flat Web Mercator plane and
+                foreshorten in perspective. Labels billboard by default.
+              </td>
+            </tr>
+            <tr>
+              <th scope="row"><code>screen</code></th>
+              <td>You want dots locked square to the viewport.</td>
+              <td>Supports pan, zoom, and bearing, but not pitch.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="runtime">
+        <h2>Runtime controls</h2>
+        <p>The main <code>LowResBasemap</code> controls are grouped below.</p>
+        <ul>
+          <li>
+            Lifecycle: <code>addTo</code>, <code>remove</code>,
+            <code>refresh</code>.
+          </li>
+          <li>
+            Appearance: <code>setTheme</code>, <code>setColorMode</code>,
+            <code>setCell</code>, label, locale, fog, and building controls.
+          </li>
+          <li>
+            Cartography: <code>setSource</code>, <code>setSources</code>,
+            <code>setSourceTime</code>, <code>setLayers</code>, and
+            <code>setLayerVisible</code>.
+          </li>
+          <li>
+            Data: heatmap compatibility methods plus data-layer CRUD, trip
+            playback, selection, and feature queries.
+          </li>
+          <li>
+            Camera: <code>setProjectionMode</code> and <code>setCamera</code>.
+          </li>
+        </ul>
+        <p>
+          The package ships TypeScript declarations and typed load, render,
+          error, feature, selection, style, layer, time, projection, building,
+          fog, and heatmap events. The
+          <a href="https://github.com/niko-dellic/bad-map#runtime-api"
+            >README API list</a
+          >
+          is the compact method reference.
+        </p>
+      </section>
+
+      <section id="demo-package">
+        <h2>Demo versus package</h2>
+        <p>The demo shows the package, then adds a few bad ideas of its own.</p>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Feature</th>
+              <th scope="col">Exported by <code>bad-map</code>?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Semantic map, data layers, fog, buildings</th>
+              <td>Yes.</td>
+            </tr>
+            <tr>
+              <th scope="row">Screen-space vignette and fisheye</th>
+              <td>No. They are demo-only effects.</td>
+            </tr>
+            <tr>
+              <th scope="row">Place search and settings interface</th>
+              <td>No. They belong to the demo application.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="limitations">
+        <h2>Limitations</h2>
+        <ul>
+          <li>Requires a browser, DOM, canvas, WebGL 2, and Web Workers.</li>
+          <li>Uses Web Mercator.</li>
+          <li>Built-in semantic packs currently require MVT sources.</li>
+          <li>Screen mode supports bearing but not pitch.</li>
+          <li>
+            Surface mode is an experimental flat plane. Terrain elevation is not
+            supported.
+          </li>
+          <li>
+            Numeric data is categorical or quantized; this is not a general
+            raster engine.
+          </li>
+          <li>
+            3D buildings expect OpenMapTiles building properties and remain
+            smooth native geometry by design.
+          </li>
+          <li>
+            Source attribution must remain visible, either through MapLibre's
+            attribution control or an equivalent supplied by the host app.
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Still here? Read the
+        <a href="https://github.com/niko-dellic/bad-map#readme">full README</a>
+        or <a href="/demo/">make the map move</a>.
+      </p>
+    </footer>
+  </body>
+</html>

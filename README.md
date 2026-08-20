@@ -280,12 +280,12 @@ unchanged across theme and greyscale updates.
 The FX tab also includes an optional demo-only fisheye pass. It applies the
 same aspect-corrected radial polynomial used by draaimolen's post-processing
 effect to the completed map canvas while leaving HTML controls untouched.
-Lens strength controls the total distortion, while edge focus shifts that
-distortion from the broad `r²` term toward the edge-concentrated `r⁴` term
-without changing its total at the configured radius. The fisheye is enabled by
-default, and changing it only repaints the map; it does not request a new
-worker rasterization. The settings panel starts collapsed so the map remains
-the initial focus.
+Broad curvature (`k1`) controls the `r²` bend that begins nearer the center,
+while edge curvature (`k2`) independently controls the edge-concentrated `r⁴`
+bend. Radius controls where those terms reach their configured values. The
+fisheye is enabled by default, and changing it only repaints the map; it does
+not request a new worker rasterization. The settings panel starts collapsed so
+the map remains the initial focus.
 
 ```ts
 const basemap = new LowResBasemap({

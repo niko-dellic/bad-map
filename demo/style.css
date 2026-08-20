@@ -26,7 +26,7 @@ body.demo-page {
 
 body.demo-page,
 #app {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: inherit;
 }
 
 #app {
@@ -88,6 +88,7 @@ body.demo-page,
 
 #app header strong {
   color: #d7d7d7;
+  font-weight: inherit;
 }
 #app header span,
 #place-search,

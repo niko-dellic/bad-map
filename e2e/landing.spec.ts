@@ -32,12 +32,15 @@ test("promotes the package and embeds the interactive demo", async ({
 }) => {
   await page.goto("/");
 
-  await expect(
-    page.getByRole("heading", { name: "Make your map worse." }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "bad-map" })).toBeVisible();
+  await expect(page.getByText("Make your map worse.")).toBeVisible();
   await expect(page.locator('link[href="/demo/landing.css"]')).toHaveCount(1);
   await expect(page.locator('link[href="/demo/landing-font.css"]')).toHaveCount(
     0,
+  );
+  await expect(page.getByRole("link", { name: "docs" })).toHaveAttribute(
+    "href",
+    "/docs/",
   );
   const editableStyles = await page.request.get("/demo/landing.css");
   expect(editableStyles.ok()).toBe(true);
@@ -45,10 +48,9 @@ test("promotes the package and embeds the interactive demo", async ({
   expect(editableStylesText).toContain("Intentionally almost unstyled");
   expect(editableStylesText).toContain("--demo-width: 55vw");
   expect(editableStylesText).not.toContain("base64");
-  await expect(page.getByRole("link", { name: "try it" })).toHaveCSS(
-    "color",
-    "rgb(142, 197, 255)",
-  );
+  await expect(
+    page.getByRole("link", { name: "full screen", exact: true }),
+  ).toHaveCSS("color", "rgb(142, 197, 255)");
   await expect(page.getByText("npm install bad-map").first()).toBeVisible();
   await expect(
     page.getByRole("link", { name: "install anyway ↗" }),
@@ -77,4 +79,22 @@ test("keeps the embedded canvas bounded on a mobile viewport", async ({
   await page.goto("/");
   await expect(page.locator("#status")).toContainText("rendered in");
   await expectDemoBoundedByWindow(page);
+});
+
+test("uses the same plain font in the full-screen demo", async ({ page }) => {
+  await page.goto("/demo/");
+  await expect(page.locator("#status")).toContainText("rendered in");
+
+  const typography = await page.evaluate(() => ({
+    body: getComputedStyle(document.body).fontFamily,
+    label: getComputedStyle(document.querySelector("#app header strong")!)
+      .fontFamily,
+    labelWeight: getComputedStyle(document.querySelector("#app header strong")!)
+      .fontWeight,
+    status: getComputedStyle(document.querySelector("#status")!).fontFamily,
+  }));
+
+  expect(typography.label).toBe(typography.body);
+  expect(typography.status).toBe(typography.body);
+  expect(typography.labelWeight).toBe("400");
 });

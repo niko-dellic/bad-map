@@ -716,11 +716,11 @@ test("configures the demo-only fisheye screen pass", async ({ page }) => {
   await page.locator("#tab-fx").click();
   const enabled = page.locator("#fisheye-enabled");
   await expect(enabled).toBeChecked();
-  await expect(page.locator("#fisheye-lens")).toHaveValue("0.35");
-  await expect(page.locator("#fisheye-edge-focus")).toHaveValue("0");
+  await expect(page.locator("#fisheye-k1")).toHaveValue("-0.35");
+  await expect(page.locator("#fisheye-k2")).toHaveValue("0");
   await expect(page.locator("#fisheye-radius")).toHaveValue("1");
   await expect(page.locator("#fisheye-status")).toHaveText(
-    "35% lens · 0% edge focus",
+    "broad -0.35 · edge 0.00",
   );
 
   const before = await diagnostics(page);
@@ -731,14 +731,14 @@ test("configures the demo-only fisheye screen pass", async ({ page }) => {
     clip: { x: 100, y: 100, width: 400, height: 400 },
   });
   await enabled.check();
-  await page.locator("#fisheye-lens").fill("0.8");
-  await page.locator("#fisheye-edge-focus").fill("0.25");
+  await page.locator("#fisheye-k1").fill("-0.6");
+  await page.locator("#fisheye-k2").fill("-0.25");
   await page.locator("#fisheye-radius").fill("1.25");
-  await expect(page.locator("#fisheye-lens-value")).toHaveText("80%");
-  await expect(page.locator("#fisheye-edge-focus-value")).toHaveText("25%");
+  await expect(page.locator("#fisheye-k1-value")).toHaveText("-0.60");
+  await expect(page.locator("#fisheye-k2-value")).toHaveText("-0.25");
   await expect(page.locator("#fisheye-radius-value")).toHaveText("125%");
   await expect(page.locator("#fisheye-status")).toHaveText(
-    "80% lens · 25% edge focus",
+    "broad -0.60 · edge -0.25",
   );
   expect(
     await page.evaluate(() => {
@@ -765,7 +765,7 @@ test("configures the demo-only fisheye screen pass", async ({ page }) => {
     options: {
       enabled: true,
       k1: -0.6,
-      k2: -0.2,
+      k2: -0.25,
       strength: 1,
       radius: 1.25,
     },
