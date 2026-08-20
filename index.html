@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="color: #d7d9e0; background-color: #0e0f12">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#070808" />
+    <meta name="theme-color" content="#0e0f12" />
     <meta
       name="description"
       content="bad-map is a deliberately low-resolution, less-dependable map renderer for MapLibre GL JS."
@@ -19,8 +19,7 @@
   <body class="landing-page">
     <header class="site-header">
       <nav aria-label="Primary navigation">
-        <a href="https://github.com/niko-dellic/bad-map#readme">docs</a>
-        <a href="/demo/">full screen</a>
+        <a href="/demo/">demo</a>
         <a href="https://www.npmjs.com/package/bad-map">npm</a>
         <a href="https://github.com/niko-dellic/bad-map">github</a>
       </nav>
@@ -68,10 +67,15 @@
             your friends might think you are a little cooler if you have any.
           </div>
 
-          <a href="/demo/">open full-screen demo ↗</a>
+          <a href="/demo/">open demo (customizable) ↗</a>
         </div>
         <div class="demo-window">
-          <div id="demo-mount" role="status" aria-live="polite">
+          <div
+            id="demo-mount"
+            role="status"
+            aria-live="polite"
+            style="visibility: hidden"
+          >
             loading bad map…
           </div>
         </div>
