@@ -1581,7 +1581,16 @@ test("keeps producing exact frames after pan, zoom, and resize", async ({
   expect(centerAfter).not.toEqual(centerBefore);
 
   const afterPan = await diagnostics(page);
-  await page.locator(".maplibregl-ctrl-zoom-in").click();
+  await page.evaluate(() => {
+    const map = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { getZoom(): number; setZoom(zoom: number): void };
+        };
+      }
+    ).__badMapDemo.map;
+    map.setZoom(map.getZoom() + 1);
+  });
   await expect
     .poll(async () => (await diagnostics(page)).lastGeneration)
     .toBeGreaterThan(afterPan.lastGeneration);
