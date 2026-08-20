@@ -371,8 +371,13 @@ test("debounces OSM place lookup and selects a result", async ({ page }) => {
   await page.waitForTimeout(450);
   expect(requestCount).toBe(0);
 
-  await input.fill("Am");
-  await input.fill("Amsterdam");
+  await input.evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "Am";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.value = "Amsterdam";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   const option = page.getByRole("option", { name: /Amsterdam/ });
   await expect(option).toBeVisible();
   expect(requestCount).toBe(1);
@@ -1501,7 +1506,9 @@ test("keeps producing exact frames after pan, zoom, and resize", async ({
   );
 });
 
-test("meets cached render and interaction baselines", async ({ page }) => {
+test("meets cached render and interaction baselines @performance", async ({
+  page,
+}) => {
   const cold = await diagnostics(page);
   await page.evaluate(() =>
     (
