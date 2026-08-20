@@ -54,7 +54,7 @@ const map = new Map({
     ],
   },
   center: [-74.006, 40.7128],
-  zoom: 14.4,
+  zoom: 13.8,
   minZoom: 2,
   maxZoom: 19,
   bearing: 0,
@@ -197,6 +197,8 @@ const fisheyeEnabled =
   document.querySelector<HTMLInputElement>("#fisheye-enabled")!;
 const fisheyeK1 = document.querySelector<HTMLInputElement>("#fisheye-k1")!;
 const fisheyeK2 = document.querySelector<HTMLInputElement>("#fisheye-k2")!;
+const fisheyeStrength =
+  document.querySelector<HTMLInputElement>("#fisheye-strength")!;
 const fisheyeRadius =
   document.querySelector<HTMLInputElement>("#fisheye-radius")!;
 const fisheyeStatus =
@@ -204,12 +206,13 @@ const fisheyeStatus =
 fisheyeEnabled.checked = DEFAULT_SCREEN_FISHEYE.enabled;
 fisheyeK1.value = String(DEFAULT_SCREEN_FISHEYE.k1);
 fisheyeK2.value = String(DEFAULT_SCREEN_FISHEYE.k2);
+fisheyeStrength.value = String(DEFAULT_SCREEN_FISHEYE.strength);
 fisheyeRadius.value = String(DEFAULT_SCREEN_FISHEYE.radius);
 const currentFisheyeOptions = (): ScreenFisheyeOptions => ({
   enabled: fisheyeEnabled.checked,
   k1: Number(fisheyeK1.value),
   k2: Number(fisheyeK2.value),
-  strength: 1,
+  strength: Number(fisheyeStrength.value),
   radius: Number(fisheyeRadius.value),
 });
 const renderFisheye = () => {
@@ -218,16 +221,19 @@ const renderFisheye = () => {
     options.k1.toFixed(2);
   document.querySelector("#fisheye-k2-value")!.textContent =
     options.k2.toFixed(2);
+  document.querySelector("#fisheye-strength-value")!.textContent =
+    options.strength.toFixed(2);
   document.querySelector("#fisheye-radius-value")!.textContent =
     `${Math.round(options.radius * 100)}%`;
   fisheyeStatus.textContent = options.enabled
-    ? `broad ${options.k1.toFixed(2)} · edge ${options.k2.toFixed(2)}`
+    ? `broad ${options.k1.toFixed(2)} · edge ${options.k2.toFixed(2)} · strength ${options.strength.toFixed(2)}`
     : "effect disabled";
   fisheye.setOptions(options);
 };
 fisheyeEnabled.onchange = renderFisheye;
 fisheyeK1.oninput = renderFisheye;
 fisheyeK2.oninput = renderFisheye;
+fisheyeStrength.oninput = renderFisheye;
 fisheyeRadius.oninput = renderFisheye;
 renderFisheye();
 
@@ -1364,7 +1370,7 @@ document.querySelector<HTMLButtonElement>("#apply-sources")!.onclick = () => {
 document.querySelector<HTMLButtonElement>("#reset")!.onclick = () => {
   map.easeTo({
     center: [-74.006, 40.7128],
-    zoom: 14.4,
+    zoom: 13.8,
     bearing: 0,
     pitch: 0,
     duration: 500,

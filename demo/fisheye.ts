@@ -15,7 +15,7 @@ export const DEFAULT_SCREEN_FISHEYE: ScreenFisheyeOptions = {
   enabled: true,
   k1: -0.35,
   k2: 0,
-  strength: 1,
+  strength: 1.33,
   radius: 1,
 };
 

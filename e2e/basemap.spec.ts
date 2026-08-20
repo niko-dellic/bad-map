@@ -718,9 +718,10 @@ test("configures the demo-only fisheye screen pass", async ({ page }) => {
   await expect(enabled).toBeChecked();
   await expect(page.locator("#fisheye-k1")).toHaveValue("-0.35");
   await expect(page.locator("#fisheye-k2")).toHaveValue("0");
+  await expect(page.locator("#fisheye-strength")).toHaveValue("1.33");
   await expect(page.locator("#fisheye-radius")).toHaveValue("1");
   await expect(page.locator("#fisheye-status")).toHaveText(
-    "broad -0.35 · edge 0.00",
+    "broad -0.35 · edge 0.00 · strength 1.33",
   );
 
   const before = await diagnostics(page);
@@ -733,12 +734,14 @@ test("configures the demo-only fisheye screen pass", async ({ page }) => {
   await enabled.check();
   await page.locator("#fisheye-k1").fill("-0.6");
   await page.locator("#fisheye-k2").fill("-0.25");
+  await page.locator("#fisheye-strength").fill("1.4");
   await page.locator("#fisheye-radius").fill("1.25");
   await expect(page.locator("#fisheye-k1-value")).toHaveText("-0.60");
   await expect(page.locator("#fisheye-k2-value")).toHaveText("-0.25");
+  await expect(page.locator("#fisheye-strength-value")).toHaveText("1.40");
   await expect(page.locator("#fisheye-radius-value")).toHaveText("125%");
   await expect(page.locator("#fisheye-status")).toHaveText(
-    "broad -0.60 · edge -0.25",
+    "broad -0.60 · edge -0.25 · strength 1.40",
   );
   expect(
     await page.evaluate(() => {
@@ -766,7 +769,7 @@ test("configures the demo-only fisheye screen pass", async ({ page }) => {
       enabled: true,
       k1: -0.6,
       k2: -0.25,
-      strength: 1,
+      strength: 1.4,
       radius: 1.25,
     },
     layersPresent: true,
@@ -788,7 +791,10 @@ test("exposes stable slots and switches between bearing and surface cameras", as
     const { map, basemap } = (
       window as typeof window & {
         __badMapDemo: {
-          map: { getLayer(id: string): { type?: string } | undefined };
+          map: {
+            getLayer(id: string): { type?: string } | undefined;
+            getZoom(): number;
+          };
           basemap: {
             layerIds: { data: string } & Record<string, string>;
             getLayers(): { id: string }[];
@@ -804,6 +810,7 @@ test("exposes stable slots and switches between bearing and surface cameras", as
       dataType: map.getLayer(basemap.layerIds.data)?.type,
       packs: basemap.getLayers().map((pack) => pack.id),
       labelsBillboard: basemap.getLabelsBillboard(),
+      zoom: map.getZoom(),
     };
   });
   expect(slots.present).toBe(true);
@@ -819,6 +826,7 @@ test("exposes stable slots and switches between bearing and surface cameras", as
   );
   expect(slots.packs).not.toContain("weather");
   expect(slots.labelsBillboard).toBe(true);
+  expect(slots.zoom).toBeCloseTo(13.8);
   await expect(page.locator("#projection")).toHaveValue("surface");
   await expect(page.locator("#pitch")).toBeEnabled();
   expect(

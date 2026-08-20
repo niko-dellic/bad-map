@@ -282,10 +282,11 @@ same aspect-corrected radial polynomial used by draaimolen's post-processing
 effect to the completed map canvas while leaving HTML controls untouched.
 Broad curvature (`k1`) controls the `r²` bend that begins nearer the center,
 while edge curvature (`k2`) independently controls the edge-concentrated `r⁴`
-bend. Radius controls where those terms reach their configured values. The
-fisheye is enabled by default, and changing it only repaints the map; it does
-not request a new worker rasterization. The settings panel starts collapsed so
-the map remains the initial focus.
+bend. Overall strength scales both coefficients together without changing
+their relationship, and radius controls where those terms reach their
+configured values. The fisheye is enabled by default, and changing it only
+repaints the map; it does not request a new worker rasterization. The settings
+panel starts collapsed so the map remains the initial focus.
 
 ```ts
 const basemap = new LowResBasemap({

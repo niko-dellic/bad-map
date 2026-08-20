@@ -1,31 +1,11 @@
 /*
- * Docs need to be legible, not respectable.
- * This file is intentionally small so changing the whole thing stays cheap.
+ * Intentionally almost unstyled, like the landing page.
+ * Tables and code blocks are the only structural exceptions.
  */
 
 :root {
-  color-scheme: dark;
-  background: #0e0f12;
   color: #d7d9e0;
-  font-family:
-    ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  line-height: 1.5;
-}
-
-body {
-  max-width: 78rem;
-  margin: 1rem;
-}
-
-header,
-main,
-footer {
-  max-width: 76ch;
-}
-
-section {
-  margin-block: 3rem;
-  scroll-margin-top: 1rem;
+  background: #0e0f12;
 }
 
 a {
@@ -41,50 +21,23 @@ a:focus-visible {
   color: #fff;
 }
 
-nav a + a {
-  margin-left: 1ch;
-}
-
 pre {
+  max-width: 100%;
+  padding: 8px;
   overflow-x: auto;
-  padding: 0.75rem;
   border: 1px solid #3a3d46;
   background: #08090b;
 }
 
-code,
-pre {
-  font-family: inherit;
-}
-
 table {
-  width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
 }
 
 th,
 td {
-  padding: 0.5rem;
+  padding: 4px 8px;
   border: 1px solid #3a3d46;
   text-align: left;
   vertical-align: top;
-}
-
-dt {
-  margin-top: 1rem;
-  font-weight: bold;
-}
-
-dd {
-  margin-left: 2ch;
-}
-
-@media (max-width: 640px) {
-  body {
-    margin: 0.75rem;
-  }
-
-  table {
-    font-size: 0.875rem;
-  }
 }

@@ -27,8 +27,8 @@
   the optical gradient is not unintentionally squared near the edge.
 - A demo-only fisheye post-process in the FX tab, adapted from draaimolen's
   aspect-corrected radial polynomial shader with independent broad (`k1`) and
-  edge (`k2`) curvature plus viewport-radius controls. It is enabled by default,
-  with the demo settings panel initially collapsed.
+  edge (`k2`) curvature, shared strength, and viewport-radius controls. It is
+  enabled by default, with the demo settings panel initially collapsed.
 - A self-contained browser distribution with embedded workers, NodeNext-safe
   declarations, package metadata, third-party notices, and an isolated packed
   consumer test.
