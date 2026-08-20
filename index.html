@@ -4,754 +4,124 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0e0f12" />
+    <meta
+      name="description"
+      content="bad-map is a deliberately low-resolution, less-dependable map renderer for MapLibre GL JS."
+    />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <title>bad-map — semantic low-resolution maps</title>
+    <link rel="stylesheet" href="/demo/landing.css" />
+    <title>bad-map — make your map worse</title>
   </head>
-  <body>
-    <div id="app">
-      <div
-        id="map"
-        aria-label="Interactive low-resolution map of New York City"
-      ></div>
-      <canvas id="screen-vignette" aria-hidden="true"></canvas>
-      <div id="top-bar">
-        <header>
-          <strong>bad-map</strong>
-          <span id="status">loading vector tiles…</span>
-        </header>
-        <button
-          id="feature-query-toggle"
-          class="icon-button"
-          type="button"
-          aria-label="Enable mouse feature queries"
-          aria-pressed="false"
-          title="Enable mouse feature queries"
-        >
-          <i class="ph ph-cursor-click" aria-hidden="true"></i>
-        </button>
-        <div
-          id="place-search"
-          class="is-collapsed"
-          role="search"
-          aria-label="Place lookup"
-        >
-          <button
-            id="place-search-toggle"
-            class="icon-button"
-            type="button"
-            aria-label="Search places"
-            aria-controls="place-search-content"
-            aria-expanded="false"
-            title="Search places"
-          >
-            <i class="ph ph-magnifying-glass" aria-hidden="true"></i>
-          </button>
-          <div id="place-search-content" hidden>
-            <div class="place-search-field">
-              <input
-                id="place-search-input"
-                type="search"
-                placeholder="look up a place…"
-                autocomplete="off"
-                spellcheck="false"
-                aria-label="Look up a place"
-                aria-autocomplete="list"
-                aria-controls="place-search-results"
-                aria-expanded="false"
-              />
-              <button
-                id="place-search-clear"
-                type="button"
-                aria-label="Clear place lookup"
-                hidden
-              >
-                clear
-              </button>
-            </div>
-            <div class="place-search-meta">
-              <span id="place-search-status" role="status" aria-live="polite"
-                >type at least 2 characters</span
-              >
-              <span
-                ><a href="https://www.openstreetmap.org/copyright"
-                  >OpenStreetMap</a
-                >
-                via
-                <a href="https://photon.komoot.io/">Photon</a></span
-              >
-            </div>
-            <ul
-              id="place-search-results"
-              role="listbox"
-              aria-label="Place lookup results"
-              hidden
-            ></ul>
+  <body class="landing-page">
+    <header class="site-header">
+      <a class="wordmark" href="/" aria-label="bad-map home">
+        <span aria-hidden="true">⠃</span>
+        bad-map
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#demo">demo</a>
+        <a href="/demo/">full screen</a>
+        <a href="https://www.npmjs.com/package/bad-map">npm</a>
+        <a href="https://github.com/niko-dellic/bad-map">github</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div id="hero-map" aria-hidden="true"></div>
+        <div class="hero-content">
+          <p class="eyebrow">precision was a mistake</p>
+          <h1 id="hero-title">Make your<br /><span>map worse.</span></h1>
+          <p class="hero-copy">
+            <code>bad-map</code> keeps the data, loses the confidence, and turns
+            precise geography into plausible deniability.
+          </p>
+          <div class="install-row" aria-label="Installation command">
+            <span aria-hidden="true">$</span>
+            <code>npm install bad-map</code>
           </div>
-        </div>
-      </div>
-      <div id="readout" role="status" aria-live="polite" hidden>
-        Move over the map to inspect a feature.
-      </div>
-      <aside id="settings" class="is-collapsed" aria-label="Map settings">
-        <div
-          id="settings-resize"
-          class="resize-handle"
-          role="separator"
-          aria-label="Resize settings panel"
-          aria-orientation="vertical"
-          aria-valuemin="248"
-          aria-valuemax="480"
-          aria-valuenow="268"
-          tabindex="0"
-        ></div>
-        <div class="panel-chrome">
-          <div class="panel-toolbar">
-            <div
-              class="panel-tabs"
-              role="tablist"
-              aria-label="Settings sections"
+          <div class="hero-actions">
+            <a class="button button-primary" href="#demo">see the damage</a>
+            <a
+              class="button"
+              href="https://www.npmjs.com/package/bad-map"
+              rel="noreferrer"
+              >install anyway ↗</a
             >
-              <button
-                id="tab-display"
-                class="panel-tab is-active"
-                type="button"
-                role="tab"
-                aria-selected="true"
-                aria-controls="panel-display"
-                aria-label="Display settings"
-                title="Display settings"
-                data-tab="display"
-              >
-                <i class="ph ph-sliders-horizontal" aria-hidden="true"></i>
-              </button>
-              <button
-                id="tab-fx"
-                class="panel-tab"
-                type="button"
-                role="tab"
-                aria-selected="false"
-                aria-controls="panel-fx"
-                aria-label="Screen effects"
-                title="Screen effects"
-                data-tab="fx"
-                tabindex="-1"
-              >
-                <i class="ph ph-sparkle" aria-hidden="true"></i>
-              </button>
-              <button
-                id="tab-layers"
-                class="panel-tab"
-                type="button"
-                role="tab"
-                aria-selected="false"
-                aria-controls="panel-layers"
-                aria-label="Layer settings"
-                title="Layer settings"
-                data-tab="layers"
-                tabindex="-1"
-              >
-                <i class="ph ph-stack" aria-hidden="true"></i>
-              </button>
-              <button
-                id="tab-data"
-                class="panel-tab"
-                type="button"
-                role="tab"
-                aria-selected="false"
-                aria-controls="panel-data"
-                aria-label="Data settings"
-                title="Data settings"
-                data-tab="data"
-                tabindex="-1"
-              >
-                <i class="ph ph-chart-scatter" aria-hidden="true"></i>
-              </button>
-            </div>
-            <div class="panel-actions">
-              <button
-                id="reset"
-                class="icon-button"
-                type="button"
-                aria-label="Reset view"
-                title="Reset view"
-              >
-                <i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i>
-              </button>
-              <button
-                id="settings-toggle"
-                class="icon-button"
-                type="button"
-                aria-expanded="false"
-                aria-label="Expand settings panel"
-                title="Expand settings panel"
-              >
-                <i class="ph ph-sidebar-simple" aria-hidden="true"></i>
-              </button>
-            </div>
           </div>
         </div>
+      </section>
 
-        <div class="panel-scroll">
-          <div
-            id="panel-display"
-            class="tab-panel"
-            role="tabpanel"
-            aria-labelledby="tab-display"
-          >
-            <section>
-              <h2>Appearance</h2>
-              <label
-                >Theme
-                <select id="theme">
-                  <option value="dark">dark</option>
-                  <option value="light">light</option>
-                </select></label
-              >
-              <button id="color-mode" type="button">full color</button>
-              <label
-                >Locale
-                <select id="locale">
-                  <option value="en">English</option>
-                  <option value="es">Español</option>
-                  <option value="fr">Français</option>
-                  <option value="de">Deutsch</option>
-                </select></label
-              >
-            </section>
+      <section class="principles" aria-label="Package features">
+        <article>
+          <span class="principle-number">01</span>
+          <h2>Throw detail away</h2>
+          <p>
+            Render the meaning in the tiles, then discard the comforting bits.
+            This is degradation with standards.
+          </p>
+        </article>
+        <article>
+          <span class="principle-number">02</span>
+          <h2>Confidence not included</h2>
+          <p>
+            Coarse cells, square dots, dithered fog, and distortion make every
+            location somebody else’s best guess.
+          </p>
+        </article>
+        <article>
+          <span class="principle-number">03</span>
+          <h2>Bad, not broken</h2>
+          <p>
+            Pan, zoom, pitch, query features, and add data. All the machinery of
+            a real map, none of the reassurance.
+          </p>
+        </article>
+      </section>
 
-            <section>
-              <h2>Atmosphere</h2>
-              <label
-                >Fog style
-                <select id="fog-mode">
-                  <option value="disabled">disabled</option>
-                  <option value="dithered" selected>dithered</option>
-                  <option value="regular">regular</option>
-                </select></label
-              >
-              <label
-                >Fog start <output id="fog-start-value">0.55</output
-                ><input
-                  id="fog-start"
-                  type="range"
-                  min="0"
-                  max="0.99"
-                  step="0.01"
-                  value="0.55"
-              /></label>
-              <label
-                >Fog end <output id="fog-end-value">0.95</output
-                ><input
-                  id="fog-end"
-                  type="range"
-                  min="0.01"
-                  max="1"
-                  step="0.01"
-                  value="0.95"
-              /></label>
-              <label for="fog-color"
-                >Fog color
-                <input
-                  id="fog-color"
-                  type="color"
-                  value="#0f0f0f"
-                  aria-label="Fog color"
-              /></label>
-              <label class="check"
-                ><input id="fog-theme-color" type="checkbox" checked /> Follow
-                theme</label
-              >
-              <output id="fog-status" class="section-status" aria-live="polite"
-                >dithered · 55–95% viewport depth · theme color</output
-              >
-            </section>
-
-            <section>
-              <h2>Cell lattice</h2>
-              <label
-                >Width <output id="cell-width-value">8</output
-                ><input
-                  id="cell-width"
-                  type="range"
-                  min="4"
-                  max="16"
-                  step="1"
-                  value="8"
-              /></label>
-              <label
-                >Height <output id="cell-height-value">16</output
-                ><input
-                  id="cell-height"
-                  type="range"
-                  min="8"
-                  max="32"
-                  step="1"
-                  value="16"
-              /></label>
-              <label
-                >Dot size <output id="dot-size-value">2</output
-                ><input
-                  id="dot-size"
-                  type="range"
-                  min="1"
-                  max="4"
-                  step="0.25"
-                  value="2"
-              /></label>
-              <button id="cells" type="button">larger cell preset</button>
-            </section>
-
-            <section>
-              <h2>Camera</h2>
-              <label
-                >Projection
-                <select id="projection">
-                  <option value="screen">screen lattice</option>
-                  <option value="surface" selected>3D surface</option>
-                </select></label
-              >
-              <label
-                >Bearing <output id="bearing-value">0°</output
-                ><input
-                  id="bearing"
-                  type="range"
-                  min="-180"
-                  max="180"
-                  step="1"
-                  value="0"
-              /></label>
-              <label
-                >Pitch <output id="pitch-value">0°</output
-                ><input
-                  id="pitch"
-                  type="range"
-                  min="0"
-                  max="70"
-                  step="1"
-                  value="0"
-              /></label>
-            </section>
-
-            <section>
-              <h2>Source</h2>
-              <label
-                >Base TileJSON
-                <input
-                  id="base-source"
-                  type="url"
-                  value="https://tiles.openfreemap.org/planet"
-              /></label>
-              <button id="apply-sources" type="button">apply source</button>
-            </section>
+      <section id="demo" class="demo-section" aria-labelledby="demo-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">live evidence</p>
+            <h2 id="demo-title">Try depending on it.</h2>
           </div>
-
-          <div
-            id="panel-fx"
-            class="tab-panel"
-            role="tabpanel"
-            aria-labelledby="tab-fx"
-            hidden
-          >
-            <section>
-              <h2>Screen vignette</h2>
-              <label class="check"
-                ><input id="vignette-enabled" type="checkbox" checked />
-                Enabled</label
-              >
-              <label
-                >Edge reach <output id="vignette-reach-value">32%</output
-                ><input
-                  id="vignette-reach"
-                  type="range"
-                  min="0.05"
-                  max="0.5"
-                  step="0.01"
-                  value="0.32"
-              /></label>
-              <label
-                >Falloff
-                <select id="vignette-falloff">
-                  <option value="linear" selected>linear</option>
-                  <option value="smooth">smooth S-curve</option>
-                  <option value="edge">edge weighted</option>
-                </select></label
-              >
-              <label
-                >Base shape
-                <select id="vignette-base">
-                  <option value="rectangle" selected>rectangle</option>
-                  <option value="oval">oval</option>
-                </select></label
-              >
-              <label
-                >Circularity <output id="vignette-circularity-value">35%</output
-                ><input
-                  id="vignette-circularity"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value="0.35"
-              /></label>
-              <label
-                >Opacity <output id="vignette-opacity-value">100%</output
-                ><input
-                  id="vignette-opacity"
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.01"
-                  value="1"
-              /></label>
-              <label for="vignette-color"
-                >Dither color
-                <input
-                  id="vignette-color"
-                  type="color"
-                  value="#0f0f0f"
-                  aria-label="Vignette dither color"
-              /></label>
-              <label class="check"
-                ><input id="vignette-theme-color" type="checkbox" checked />
-                Follow theme</label
-              >
-              <output
-                id="vignette-status"
-                class="section-status"
-                aria-live="polite"
-                >linear · rectangle base · 8×8 CSS-pixel dither · theme color ·
-                demo-only</output
-              >
-            </section>
-
-            <section>
-              <h2>Fisheye</h2>
-              <label class="check"
-                ><input id="fisheye-enabled" type="checkbox" checked />
-                Enabled</label
-              >
-              <label
-                >Curvature <output id="fisheye-k1-value">-0.35</output
-                ><input
-                  id="fisheye-k1"
-                  type="range"
-                  min="-2"
-                  max="2"
-                  step="0.05"
-                  value="-0.35"
-              /></label>
-              <label
-                >Edge curve <output id="fisheye-k2-value">0.00</output
-                ><input
-                  id="fisheye-k2"
-                  type="range"
-                  min="-2"
-                  max="2"
-                  step="0.05"
-                  value="0"
-              /></label>
-              <label
-                >Strength <output id="fisheye-strength-value">1.00</output
-                ><input
-                  id="fisheye-strength"
-                  type="range"
-                  min="0"
-                  max="2"
-                  step="0.05"
-                  value="1"
-              /></label>
-              <label
-                >Radius <output id="fisheye-radius-value">100%</output
-                ><input
-                  id="fisheye-radius"
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.05"
-                  value="1"
-              /></label>
-              <output
-                id="fisheye-status"
-                class="section-status"
-                aria-live="polite"
-                >radial polynomial · k1 -0.35 · k2 0.00 · demo-only</output
-              >
-            </section>
+          <a href="/demo/">open full-screen demo ↗</a>
+        </div>
+        <div class="demo-window">
+          <div class="demo-window-bar" aria-hidden="true">
+            <span></span><span></span><span></span>
+            <p>bad-map / new-york-city-ish</p>
           </div>
-
-          <div
-            id="panel-layers"
-            class="tab-panel"
-            role="tabpanel"
-            aria-labelledby="tab-layers"
-            hidden
-          >
-            <section>
-              <h2>Map layers</h2>
-              <div id="packs" class="checks">
-                <label><input id="labels" type="checkbox" /> labels</label>
-                <label
-                  ><input id="buildings-3d" type="checkbox" /> 3D
-                  buildings</label
-                >
-              </div>
-            </section>
-          </div>
-
-          <div
-            id="panel-data"
-            class="tab-panel"
-            role="tabpanel"
-            aria-labelledby="tab-data"
-            hidden
-          >
-            <section>
-              <h2>Waypoint</h2>
-              <label
-                >Marker
-                <select id="waypoint-style">
-                  <option value="locator">locator target</option>
-                  <option value="caret">down caret</option>
-                </select></label
-              >
-              <label
-                >Size <output id="waypoint-size-value">24</output
-                ><input
-                  id="waypoint-size"
-                  type="range"
-                  min="16"
-                  max="64"
-                  step="4"
-                  value="24"
-              /></label>
-              <output
-                id="waypoint-status"
-                class="section-status"
-                aria-live="polite"
-                >applies to the place-search waypoint</output
-              >
-            </section>
-
-            <section>
-              <h2>Uber pickup heatmap</h2>
-              <label
-                >Renderer
-                <select id="heatmap-mode">
-                  <option value="off">off</option>
-                  <option value="native">native MapLibre</option>
-                  <option value="lowres">low-resolution dots</option>
-                </select></label
-              >
-              <label
-                >Radius <output id="heatmap-radius-value">36</output
-                ><input
-                  id="heatmap-radius"
-                  type="range"
-                  min="12"
-                  max="80"
-                  step="2"
-                  value="36"
-              /></label>
-              <label
-                >Intensity <output id="heatmap-intensity-value">1.0</output
-                ><input
-                  id="heatmap-intensity"
-                  type="range"
-                  min="0.25"
-                  max="3"
-                  step="0.25"
-                  value="1"
-              /></label>
-              <label
-                >Opacity <output id="heatmap-opacity-value">0.76</output
-                ><input
-                  id="heatmap-opacity"
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.01"
-                  value="0.76"
-              /></label>
-              <output
-                id="heatmap-status"
-                class="section-status"
-                aria-live="polite"
-                >loads 100,000 NYC pickups on selection</output
-              >
-            </section>
-
-            <section>
-              <h2>US highway safety</h2>
-              <label
-                >Layer
-                <select id="highway-mode">
-                  <option value="off">off</option>
-                  <option value="lowres">low-resolution paths</option>
-                </select></label
-              >
-              <label
-                >Year
-                <select id="highway-year">
-                  <option>1990</option>
-                  <option>1995</option>
-                  <option>2000</option>
-                  <option>2005</option>
-                  <option>2010</option>
-                  <option selected>2015</option>
-                </select></label
-              >
-              <label
-                >Color
-                <select id="highway-color">
-                  <option value="fatalities" selected>
-                    fatalities / distance
-                  </option>
-                  <option value="incidents">crashes / distance</option>
-                  <option value="fixed">fixed color</option>
-                </select></label
-              >
-              <label
-                >Width
-                <select id="highway-width">
-                  <option value="incidents" selected>crashes / distance</option>
-                  <option value="fatalities">fatalities / distance</option>
-                  <option value="fixed">fixed width</option>
-                </select></label
-              >
-              <label
-                >Opacity <output id="highway-opacity-value">0.86</output
-                ><input
-                  id="highway-opacity"
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.01"
-                  value="0.86"
-              /></label>
-              <output
-                id="highway-status"
-                class="section-status"
-                aria-live="polite"
-                >loads nationwide roads on selection</output
-              >
-            </section>
-
-            <section>
-              <h2>NYC animated trips</h2>
-              <label
-                >Layer
-                <select id="trips-mode">
-                  <option value="off">off</option>
-                  <option value="lowres" selected>low-resolution trails</option>
-                </select></label
-              >
-              <div
-                class="trips-transport"
-                role="group"
-                aria-label="Trips playback"
-              >
-                <div class="trips-transport-controls">
-                  <button
-                    id="trips-step-back"
-                    class="icon-button"
-                    type="button"
-                    aria-label="Step backward 15 units"
-                    title="Step backward 15 units"
-                    disabled
-                  >
-                    <i class="ph ph-skip-back" aria-hidden="true"></i>
-                  </button>
-                  <button
-                    id="trips-play"
-                    class="icon-button trips-play"
-                    type="button"
-                    aria-label="Play trips"
-                    title="Play trips"
-                    aria-pressed="false"
-                    disabled
-                  >
-                    <i class="ph ph-play" aria-hidden="true"></i>
-                  </button>
-                  <button
-                    id="trips-step-forward"
-                    class="icon-button"
-                    type="button"
-                    aria-label="Step forward 15 units"
-                    title="Step forward 15 units"
-                    disabled
-                  >
-                    <i class="ph ph-skip-forward" aria-hidden="true"></i>
-                  </button>
-                  <output id="trips-time-value" for="trips-time"
-                    >0 / 1800</output
-                  >
-                </div>
-                <input
-                  id="trips-time"
-                  type="range"
-                  min="0"
-                  max="1800"
-                  step="1"
-                  value="0"
-                  aria-label="Trip timeline"
-                  disabled
-                />
-              </div>
-              <label
-                >Speed <output id="trips-speed-value">1×</output
-                ><input
-                  id="trips-speed"
-                  type="range"
-                  min="0.25"
-                  max="4"
-                  step="0.25"
-                  value="1"
-              /></label>
-              <label
-                >Trail <output id="trips-trail-value">180</output
-                ><input
-                  id="trips-trail"
-                  type="range"
-                  min="30"
-                  max="600"
-                  step="10"
-                  value="180"
-              /></label>
-              <label
-                >Width <output id="trips-width-value">2</output
-                ><input
-                  id="trips-width"
-                  type="range"
-                  min="1"
-                  max="8"
-                  step="0.5"
-                  value="2"
-              /></label>
-              <label
-                >Opacity <output id="trips-opacity-value">1.00</output
-                ><input
-                  id="trips-opacity"
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.05"
-                  value="1"
-              /></label>
-              <output
-                id="trips-status"
-                class="section-status"
-                aria-live="polite"
-                >loads NYC trips on selection</output
-              >
-            </section>
+          <div id="demo-mount" role="status" aria-live="polite">
+            loading bad map…
           </div>
         </div>
-      </aside>
-    </div>
-    <script type="module" src="/demo/main.ts"></script>
+        <p class="demo-note">
+          Drag to pan, scroll to zoom, or search for somewhere else to be
+          vaguely located.
+        </p>
+      </section>
+
+      <section class="closing" aria-labelledby="closing-title">
+        <p class="eyebrow">nothing good lasts</p>
+        <h2 id="closing-title">Now ruin yours.</h2>
+        <div class="install-row" aria-label="Installation command">
+          <span aria-hidden="true">$</span>
+          <code>npm install bad-map</code>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>bad-map · MIT licensed · data remains somebody else’s problem</p>
+      <a href="https://github.com/niko-dellic/bad-map">source on github ↗</a>
+    </footer>
+
+    <script type="module" src="/demo/hero.ts"></script>
+    <script type="module" src="/demo/embed.ts"></script>
   </body>
 </html>

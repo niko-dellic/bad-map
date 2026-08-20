@@ -39,7 +39,7 @@ const prepareVisualPage = async (page: import("@playwright/test").Page) => {
   await page.route(TRIPS_DATA_URL, (route) =>
     route.fulfill({ json: tripsFixture }),
   );
-  await page.goto("/");
+  await page.goto("/demo/");
   await expect(page.locator("#status")).toContainText("rendered in");
   await page.locator("#settings-toggle").click();
   await page.evaluate(() => {

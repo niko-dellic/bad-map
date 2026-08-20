@@ -188,6 +188,11 @@ vignetteThemeColor.onchange = () => {
   renderVignette();
 };
 window.addEventListener("resize", renderVignette);
+const demoResizeObserver = new ResizeObserver(() => {
+  map.resize();
+  renderVignette();
+});
+demoResizeObserver.observe(document.querySelector<HTMLElement>("#app")!);
 renderVignette();
 
 const fisheyeEnabled =
@@ -1382,7 +1387,10 @@ settingsToggle.onclick = () => {
   settingsToggle.title = label;
 };
 
-window.addEventListener("beforeunload", () => basemap.remove());
+window.addEventListener("beforeunload", () => {
+  demoResizeObserver.disconnect();
+  basemap.remove();
+});
 
 // Read-only demo handles used by the interaction test harness.
 Object.assign(window, { __badMapDemo: { map, basemap, fisheye, diagnostics } });

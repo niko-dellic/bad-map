@@ -111,7 +111,7 @@ test.beforeEach(async ({ page }) => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     await route.fulfill({ json: tripsFixture });
   });
-  await page.goto("/");
+  await page.goto("/demo/");
   await expect(page.locator("#status")).toContainText("rendered in");
   const settings = page.locator("#settings");
   const settingsToggle = page.locator("#settings-toggle");

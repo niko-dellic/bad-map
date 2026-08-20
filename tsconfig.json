@@ -19,6 +19,7 @@
     "e2e",
     "demo",
     "vite.config.ts",
+    "vite.site.config.ts",
     "vitest.config.ts",
     "playwright.config.ts"
   ]

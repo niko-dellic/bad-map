@@ -6,7 +6,6 @@
   --ui-icon-size: 15px;
   color: #d7d9e0;
   background: #0e0f12;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   /* font-family: ocr; */
 }
 
@@ -14,14 +13,25 @@
   box-sizing: border-box;
 }
 html,
-body,
-#app,
+body.demo-page,
+body.demo-page #app,
 #map {
   width: 100%;
   height: 100%;
   margin: 0;
 }
-body {
+body.demo-page {
+  overflow: hidden;
+}
+
+body.demo-page,
+#app {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+#app {
+  position: relative;
+  container-type: size;
   overflow: hidden;
 }
 
@@ -49,12 +59,12 @@ body {
   gap: 8px;
 }
 
-#top-bar > header,
-#top-bar > #place-search {
+#app #top-bar > header,
+#app #top-bar > #place-search {
   position: static;
 }
 
-header,
+#app header,
 #place-search,
 #settings,
 #readout {
@@ -65,7 +75,7 @@ header,
   backdrop-filter: blur(8px);
 }
 
-header {
+#app header {
   top: 14px;
   left: 14px;
   display: flex;
@@ -76,10 +86,10 @@ header {
   line-height: 1;
 }
 
-header strong {
+#app header strong {
   color: #d7d7d7;
 }
-header span,
+#app header span,
 #place-search,
 #settings,
 #readout {
@@ -89,7 +99,7 @@ header span,
 
 #place-search {
   z-index: 7;
-  width: min(440px, max(220px, calc(100vw - var(--settings-width) - 280px)));
+  width: min(440px, max(220px, calc(100cqw - var(--settings-width) - 280px)));
   padding: 0;
   border-top: 0;
 }
@@ -159,7 +169,7 @@ header span,
 }
 
 #place-search-results {
-  max-height: min(352px, calc(100vh - 180px));
+  max-height: min(352px, calc(100cqh - 180px));
   margin: 0;
   padding: 0;
   overflow-y: auto;
@@ -406,13 +416,13 @@ body.is-resizing {
   transform: scaleX(-1);
 }
 
-section {
+#app section {
   margin-top: 13px;
   padding-top: 10px;
   border-top: 1px solid #343740;
 }
 
-h2 {
+#app h2 {
   margin: 0 0 9px;
   color: #858b9a;
   font-size: 10px;
@@ -425,7 +435,7 @@ h2 {
   margin-top: 12px;
 }
 
-label {
+#app label {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -433,13 +443,13 @@ label {
   margin: 7px 0;
 }
 
-label input[type="range"],
-label input[type="url"],
-label input[type="text"] {
+#app label input[type="range"],
+#app label input[type="url"],
+#app label input[type="text"] {
   grid-column: 1 / -1;
 }
 
-label.check {
+#app label.check {
   display: flex;
 }
 
@@ -454,9 +464,9 @@ label.check {
   margin: 3px 0;
 }
 
-select,
-input[type="url"],
-input[type="text"] {
+#app select,
+#app input[type="url"],
+#app input[type="text"] {
   min-width: 0;
   color: #d7d9e0;
   border: 1px solid #3b3e48;
@@ -467,7 +477,7 @@ input[type="text"] {
   font-size: 11px;
 }
 
-input[type="range"] {
+#app input[type="range"] {
   width: 100%;
   accent-color: #bbb;
 }
@@ -508,7 +518,7 @@ input[type="range"] {
   cursor: not-allowed;
 }
 
-input[type="color"] {
+#app input[type="color"] {
   width: 42px;
   height: 28px;
   padding: 2px;
@@ -518,11 +528,11 @@ input[type="color"] {
   cursor: pointer;
 }
 
-input[type="color"]::-webkit-color-swatch-wrapper {
+#app input[type="color"]::-webkit-color-swatch-wrapper {
   padding: 0;
 }
 
-input[type="color"]::-webkit-color-swatch {
+#app input[type="color"]::-webkit-color-swatch {
   border: 0;
   border-radius: 1px;
 }
@@ -531,7 +541,7 @@ input[type="color"]::-webkit-color-swatch {
   direction: rtl;
 }
 
-output {
+#app output {
   color: #d7d9e0;
 }
 
@@ -564,7 +574,7 @@ output {
   top: 84px;
 }
 
-button {
+#app button {
   border: 1px solid #343740;
   color: #c6cad4;
   background: transparent;
@@ -573,7 +583,7 @@ button {
   font-size: var(--ui-font-size);
   cursor: pointer;
 }
-button:hover {
+#app button:hover {
   color: #fff;
   background: #252830;
 }

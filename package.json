@@ -39,11 +39,12 @@
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "build": "npm run clean && vite build && node scripts/prune-dist.mjs && tsc -p tsconfig.build.json",
+    "build:site": "vite build --config vite.site.config.ts",
     "api:check": "npm run build && node scripts/check-api.mjs",
     "dev": "vite --host 127.0.0.1",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:functional": "playwright test e2e/basemap.spec.ts --grep-invert @performance",
+    "test:e2e:functional": "playwright test e2e/basemap.spec.ts e2e/landing.spec.ts --grep-invert @performance",
     "test:e2e:performance": "playwright test e2e/basemap.spec.ts --grep @performance",
     "test:package": "npm run build && node scripts/test-package.mjs",
     "test:all": "npm test && npm run test:e2e",
@@ -69,6 +70,7 @@
     "maplibre-gl": ">=5.0.0 <7"
   },
   "devDependencies": {
+    "@fontsource/silkscreen": "^5.3.0",
     "@mapbox/vector-tile": "^3.0.0",
     "@phosphor-icons/web": "^2.1.2",
     "@playwright/test": "^1.62.1",
