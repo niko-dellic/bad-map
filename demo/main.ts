@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@phosphor-icons/web/regular";
-import { Map, NavigationControl } from "maplibre-gl";
+import { Map } from "maplibre-gl";
 import type {
   Feature,
   FeatureCollection,
@@ -65,8 +65,6 @@ const map = new Map({
   touchPitch: true,
   attributionControl: false,
 });
-
-map.addControl(new NavigationControl({ showCompass: true }), "bottom-left");
 
 const BASE_SOURCE = {
   tileJSON: "https://tiles.openfreemap.org/planet",

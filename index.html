@@ -13,16 +13,11 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <link rel="stylesheet" href="/demo/landing-font.css" />
     <link rel="stylesheet" href="/demo/landing.css" />
     <title>bad-map — make your map worse</title>
   </head>
   <body class="landing-page">
     <header class="site-header">
-      <a class="wordmark" href="/" aria-label="bad-map home">
-        <span aria-hidden="true">⠃</span>
-        bad-map
-      </a>
       <nav aria-label="Primary navigation">
         <a href="#demo">demo</a>
         <a href="/demo/">full screen</a>
@@ -33,10 +28,10 @@
 
     <main>
       <section class="hero" aria-labelledby="hero-title">
-        <div id="hero-map" aria-hidden="true"></div>
         <div class="hero-content">
-          <p class="eyebrow">precision was a mistake</p>
-          <h1 id="hero-title">Make your<br /><span>map worse.</span></h1>
+          <h1 id="hero-title">bad-map</h1>
+          <p class="eyebrow">Make your map worse.</p>
+
           <p class="hero-copy">
             <code>bad-map</code> keeps the data, loses the confidence, and turns
             precise geography into plausible deniability.
@@ -65,58 +60,22 @@
         </div>
       </section>
 
-      <section class="principles" aria-label="Package features">
-        <article>
-          <span class="principle-number">01</span>
-          <h2>Throw detail away</h2>
-          <p>
-            Render the meaning in the tiles, then discard the comforting bits.
-            This is degradation with standards.
-          </p>
-        </article>
-        <article>
-          <span class="principle-number">02</span>
-          <h2>Confidence not included</h2>
-          <p>
-            Coarse cells, square dots, dithered fog, and distortion make every
-            location somebody else’s best guess.
-          </p>
-        </article>
-        <article>
-          <span class="principle-number">03</span>
-          <h2>Bad, not broken</h2>
-          <p>
-            Pan, zoom, pitch, query features, and add data. All the machinery of
-            a real map, none of the reassurance.
-          </p>
-        </article>
-      </section>
-
       <section id="demo" class="demo-section" aria-labelledby="demo-title">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">live evidence</p>
             <h2 id="demo-title">Try depending on it.</h2>
           </div>
           <a href="/demo/">open full-screen demo ↗</a>
         </div>
         <div class="demo-window">
-          <div class="demo-window-bar" aria-hidden="true">
-            <span></span><span></span><span></span>
-            <p>bad-map / new-york-city-ish</p>
-          </div>
           <div id="demo-mount" role="status" aria-live="polite">
             loading bad map…
           </div>
         </div>
-        <p class="demo-note">
-          Drag to pan, scroll to zoom, or search for somewhere else to be
-          vaguely located.
-        </p>
       </section>
 
       <section class="closing" aria-labelledby="closing-title">
-        <p class="eyebrow">nothing good lasts</p>
+        <p class="eyebrow">data remains somebody else’s problem.</p>
         <h2 id="closing-title">Now ruin yours.</h2>
         <div class="install-row" aria-label="Installation command">
           <span aria-hidden="true">$</span>
@@ -135,22 +94,11 @@
 
     <footer>
       <div class="footer-copy">
-        <p>bad-map · MIT licensed · data remains somebody else’s problem</p>
-        <p class="type-credit">
-          Headings set in
-          <a
-            href="https://velvetyne.fr/fonts/terminal-grotesque/"
-            rel="noreferrer"
-            >Terminal Grotesque Open</a
-          >
-          by Raphaël Bastide, with a contribution from Jérémy Landes,
-          distributed by Velvetyne.
-        </p>
+        <p>bad-map · MIT licensed · open source</p>
       </div>
       <a href="https://github.com/niko-dellic/bad-map">source on github ↗</a>
     </footer>
 
-    <script type="module" src="/demo/hero.ts"></script>
     <script type="module" src="/demo/embed.ts"></script>
     <script>
       document.querySelectorAll(".copy-button").forEach((button) => {
