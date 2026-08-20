@@ -372,7 +372,6 @@ test("debounces OSM place lookup and selects a result", async ({ page }) => {
   expect(requestCount).toBe(0);
 
   await input.fill("Am");
-  await page.waitForTimeout(100);
   await input.fill("Amsterdam");
   const option = page.getByRole("option", { name: /Amsterdam/ });
   await expect(option).toBeVisible();
@@ -1503,6 +1502,18 @@ test("keeps producing exact frames after pan, zoom, and resize", async ({
 });
 
 test("meets cached render and interaction baselines", async ({ page }) => {
+  const cold = await diagnostics(page);
+  await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __badMapDemo: { basemap: { refresh(): void } };
+      }
+    ).__badMapDemo.basemap.refresh(),
+  );
+  await expect
+    .poll(async () => (await diagnostics(page)).lastGeneration)
+    .toBeGreaterThan(cold.lastGeneration);
+
   const initial = await diagnostics(page);
   expect(initial.lastDurationMs).toBeLessThan(200);
 
