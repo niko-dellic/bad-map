@@ -9,7 +9,12 @@ test("documents package capabilities, integrations, and limitations", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "bad-map docs" }),
   ).toBeVisible();
-  await expect(page.getByText("npm install bad-map maplibre-gl")).toBeVisible();
+  await expect(
+    page.getByText("npm install bad-map", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("installed automatically", { exact: false }),
+  ).toBeVisible();
   await expect(
     page.getByText("new LowResBasemap", { exact: false }),
   ).toBeVisible();

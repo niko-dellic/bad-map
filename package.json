@@ -1,6 +1,6 @@
 {
   "name": "bad-map",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "A semantic low-resolution Braille basemap for MapLibre GL JS",
   "author": "niko-dellic",
   "type": "module",

@@ -10,10 +10,12 @@ interactive. Greyscale is the default; full color remains one method call away.
 ## Install
 
 ```sh
-npm install bad-map maplibre-gl
+npm install bad-map
 ```
 
-MapLibre GL JS is a peer dependency. The default keyless source is OpenFreeMap.
+MapLibre GL JS is a required peer dependency and is installed automatically by
+npm 7 and newer. Package managers that do not install peer dependencies should
+install `maplibre-gl@^6` explicitly. The default keyless source is OpenFreeMap.
 
 `bad-map` is a browser library, not a server-side map renderer. Creating a map
 requires the DOM, a canvas, WebGL 2, and Web Workers. In SSR frameworks, import

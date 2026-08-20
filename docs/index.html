@@ -45,10 +45,13 @@
 
       <section id="install">
         <h2>Install</h2>
-        <pre><code>npm install bad-map maplibre-gl</code></pre>
+        <pre><code>npm install bad-map</code></pre>
         <p>
-          MapLibre GL JS is a peer dependency. The default keyless tile source
-          is OpenFreeMap.
+          MapLibre GL JS is a required peer dependency and is installed
+          automatically by npm 7 and newer. Package managers that do not install
+          peer dependencies should install
+          <code>maplibre-gl@^6</code> explicitly. The default keyless tile
+          source is OpenFreeMap.
         </p>
       </section>
 

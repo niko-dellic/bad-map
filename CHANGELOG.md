@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.1
+
+### Changed
+
+- Simplified the primary installation command to `npm install bad-map`, since
+  npm 7 and newer install the required MapLibre peer dependency automatically.
+- Clarified the explicit MapLibre fallback for package managers that do not
+  install peer dependencies.
+- Moved maintainer and architecture guides into the conventional `docs/`
+  directory and updated repository and package links.
+- Made the release workflow's pan, zoom, and resize test use MapLibre's public
+  zoom API instead of assuming an optional navigation control exists.
+
 ## 0.9.0
 
 ### Added
