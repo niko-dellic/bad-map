@@ -96,7 +96,7 @@
       <div id="readout" role="status" aria-live="polite" hidden>
         Move over the map to inspect a feature.
       </div>
-      <aside id="settings" aria-label="Map settings">
+      <aside id="settings" class="is-collapsed" aria-label="Map settings">
         <div
           id="settings-resize"
           class="resize-handle"
@@ -185,9 +185,9 @@
                 id="settings-toggle"
                 class="icon-button"
                 type="button"
-                aria-expanded="true"
-                aria-label="Collapse settings panel"
-                title="Collapse settings panel"
+                aria-expanded="false"
+                aria-label="Expand settings panel"
+                title="Expand settings panel"
               >
                 <i class="ph ph-sidebar-simple" aria-hidden="true"></i>
               </button>
@@ -425,6 +425,60 @@
                 aria-live="polite"
                 >linear · rectangle base · 8×8 CSS-pixel dither · theme color ·
                 demo-only</output
+              >
+            </section>
+
+            <section>
+              <h2>Fisheye</h2>
+              <label class="check"
+                ><input id="fisheye-enabled" type="checkbox" checked />
+                Enabled</label
+              >
+              <label
+                >Curvature <output id="fisheye-k1-value">-0.35</output
+                ><input
+                  id="fisheye-k1"
+                  type="range"
+                  min="-2"
+                  max="2"
+                  step="0.05"
+                  value="-0.35"
+              /></label>
+              <label
+                >Edge curve <output id="fisheye-k2-value">0.00</output
+                ><input
+                  id="fisheye-k2"
+                  type="range"
+                  min="-2"
+                  max="2"
+                  step="0.05"
+                  value="0"
+              /></label>
+              <label
+                >Strength <output id="fisheye-strength-value">1.00</output
+                ><input
+                  id="fisheye-strength"
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.05"
+                  value="1"
+              /></label>
+              <label
+                >Radius <output id="fisheye-radius-value">100%</output
+                ><input
+                  id="fisheye-radius"
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value="1"
+              /></label>
+              <output
+                id="fisheye-status"
+                class="section-status"
+                aria-live="polite"
+                >radial polynomial · k1 -0.35 · k2 0.00 · demo-only</output
               >
             </section>
           </div>

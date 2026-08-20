@@ -113,6 +113,15 @@ test.beforeEach(async ({ page }) => {
   });
   await page.goto("/");
   await expect(page.locator("#status")).toContainText("rendered in");
+  const settings = page.locator("#settings");
+  const settingsToggle = page.locator("#settings-toggle");
+  await expect(settings).toHaveClass(/is-collapsed/);
+  await expect(settingsToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(settingsToggle).toHaveAttribute(
+    "aria-label",
+    "Expand settings panel",
+  );
+  await settingsToggle.click();
 });
 
 test("orders data and marker boundaries between base and labels", async ({
@@ -695,6 +704,80 @@ test("configures the demo-only dithered screen vignette", async ({ page }) => {
   await expect(page.locator("#vignette-status")).toHaveText(
     "demo overlay disabled",
   );
+});
+
+test("configures the demo-only fisheye screen pass", async ({ page }) => {
+  await page.locator("#tab-fx").click();
+  const enabled = page.locator("#fisheye-enabled");
+  await expect(enabled).toBeChecked();
+  await expect(page.locator("#fisheye-k1")).toHaveValue("-0.35");
+  await expect(page.locator("#fisheye-k2")).toHaveValue("0");
+  await expect(page.locator("#fisheye-strength")).toHaveValue("1");
+  await expect(page.locator("#fisheye-radius")).toHaveValue("1");
+  await expect(page.locator("#fisheye-status")).toHaveText(
+    "radial polynomial · k1 -0.35 · k2 0.00 · demo-only",
+  );
+
+  const before = await diagnostics(page);
+  await enabled.uncheck();
+  await expect(page.locator("#fisheye-status")).toHaveText(
+    "effect disabled · demo-only",
+  );
+  await page.waitForTimeout(100);
+  const undistorted = await page.screenshot({
+    clip: { x: 100, y: 100, width: 400, height: 400 },
+  });
+  await enabled.check();
+  await page.locator("#fisheye-k1").fill("-0.75");
+  await page.locator("#fisheye-k2").fill("0.25");
+  await page.locator("#fisheye-strength").fill("1.4");
+  await page.locator("#fisheye-radius").fill("1.25");
+  await expect(page.locator("#fisheye-k1-value")).toHaveText("-0.75");
+  await expect(page.locator("#fisheye-k2-value")).toHaveText("0.25");
+  await expect(page.locator("#fisheye-strength-value")).toHaveText("1.40");
+  await expect(page.locator("#fisheye-radius-value")).toHaveText("125%");
+  await expect(page.locator("#fisheye-status")).toHaveText(
+    "radial polynomial · k1 -0.75 · k2 0.25 · demo-only",
+  );
+  expect(
+    await page.evaluate(() => {
+      const { map, basemap, fisheye } = (
+        window as typeof window & {
+          __badMapDemo: {
+            map: { getLayer(id: string): unknown };
+            basemap: { layerIds: { interaction: string } };
+            fisheye: {
+              id: string;
+              getOptions(): Record<string, number | boolean>;
+            };
+          };
+        }
+      ).__badMapDemo;
+      return {
+        options: fisheye.getOptions(),
+        layersPresent:
+          Boolean(map.getLayer(fisheye.id)) &&
+          Boolean(map.getLayer(basemap.layerIds.interaction)),
+      };
+    }),
+  ).toEqual({
+    options: {
+      enabled: true,
+      k1: -0.75,
+      k2: 0.25,
+      strength: 1.4,
+      radius: 1.25,
+    },
+    layersPresent: true,
+  });
+  await page.waitForTimeout(100);
+  const distorted = await page.screenshot({
+    clip: { x: 100, y: 100, width: 400, height: 400 },
+  });
+  expect(distorted.equals(undistorted)).toBe(false);
+  const after = await diagnostics(page);
+  expect(after.renderEvents).toBe(before.renderEvents);
+  expect(after.lastGeneration).toBe(before.lastGeneration);
 });
 
 test("exposes stable slots and switches between bearing and surface cameras", async ({

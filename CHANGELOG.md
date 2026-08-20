@@ -25,6 +25,10 @@
   supports rectangle or oval base shapes, and supports theme-following or
   custom dither colors. Coverage and selected-pixel alpha are independent so
   the optical gradient is not unintentionally squared near the edge.
+- A demo-only fisheye post-process in the FX tab, adapted from draaimolen's
+  aspect-corrected radial polynomial shader with configurable primary and
+  higher-order curvature, strength, and viewport radius. It is enabled by
+  default, with the demo settings panel initially collapsed.
 - A self-contained browser distribution with embedded workers, NodeNext-safe
   declarations, package metadata, third-party notices, and an isolated packed
   consumer test.

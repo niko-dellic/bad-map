@@ -41,6 +41,16 @@ const prepareVisualPage = async (page: import("@playwright/test").Page) => {
   );
   await page.goto("/");
   await expect(page.locator("#status")).toContainText("rendered in");
+  await page.locator("#settings-toggle").click();
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __badMapDemo: {
+          fisheye: { setOptions(options: unknown): void };
+        };
+      }
+    ).__badMapDemo.fisheye.setOptions({ enabled: false });
+  });
   await page.locator("#screen-vignette").evaluate((element) => {
     element.style.display = "none";
   });
@@ -70,6 +80,27 @@ test("matches the demo-only dithered screen vignette", async ({ page }) => {
     vignette.style.display = "block";
   });
   await expect(page).toHaveScreenshot("nyc-screen-vignette.png", {
+    animations: "disabled",
+  });
+});
+
+test("matches the demo-only fisheye screen pass", async ({ page }) => {
+  await prepareVisualPage(page);
+  await page.evaluate(() => {
+    for (const element of document.querySelectorAll<HTMLElement>(
+      "#top-bar, aside, #readout, nav, .maplibregl-control-container",
+    ))
+      element.style.display = "none";
+    (
+      window as typeof window & {
+        __badMapDemo: {
+          fisheye: { setOptions(options: unknown): void };
+        };
+      }
+    ).__badMapDemo.fisheye.setOptions({ enabled: true });
+  });
+  await page.waitForTimeout(100);
+  await expect(page).toHaveScreenshot("nyc-screen-fisheye.png", {
     animations: "disabled",
   });
 });

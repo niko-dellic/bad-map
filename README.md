@@ -277,6 +277,15 @@ opacity at the viewport edge. Its dither color follows the composed theme
 ground by default, or can be replaced with an explicit color that remains
 unchanged across theme and greyscale updates.
 
+The FX tab also includes an optional demo-only fisheye pass. It applies the
+same aspect-corrected radial polynomial used by draaimolen's post-processing
+effect to the completed map canvas while leaving HTML controls untouched.
+Curvature (`k1`), higher-order edge curvature (`k2`), strength, and viewport
+radius can be tuned independently. The fisheye is enabled by default, and
+changing it only repaints the map; it does not request a new worker
+rasterization. The settings panel starts collapsed so the map remains the
+initial focus.
+
 ```ts
 const basemap = new LowResBasemap({
   fog: {

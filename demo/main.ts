@@ -27,6 +27,11 @@ import {
 import { loadPickupData, type PickupRow } from "./data-sources/pickups";
 import { loadTrips } from "./data-sources/trips";
 import {
+  DEFAULT_SCREEN_FISHEYE,
+  ScreenFisheyeLayer,
+  type ScreenFisheyeOptions,
+} from "./fisheye";
+import {
   DEFAULT_SCREEN_VIGNETTE,
   drawScreenVignette,
   type ScreenVignetteBase,
@@ -86,6 +91,7 @@ const basemap = new LowResBasemap({
   featureInteraction: false,
   camera: { rotation: true, pitch: true, maxPitch: 70 },
 });
+const fisheye = new ScreenFisheyeLayer();
 const status = document.querySelector<HTMLSpanElement>("#status")!;
 const readout = document.querySelector<HTMLElement>("#readout")!;
 const featureQueryToggle = document.querySelector<HTMLButtonElement>(
@@ -183,6 +189,50 @@ vignetteThemeColor.onchange = () => {
 };
 window.addEventListener("resize", renderVignette);
 renderVignette();
+
+const fisheyeEnabled =
+  document.querySelector<HTMLInputElement>("#fisheye-enabled")!;
+const fisheyeK1 = document.querySelector<HTMLInputElement>("#fisheye-k1")!;
+const fisheyeK2 = document.querySelector<HTMLInputElement>("#fisheye-k2")!;
+const fisheyeStrength =
+  document.querySelector<HTMLInputElement>("#fisheye-strength")!;
+const fisheyeRadius =
+  document.querySelector<HTMLInputElement>("#fisheye-radius")!;
+const fisheyeStatus =
+  document.querySelector<HTMLOutputElement>("#fisheye-status")!;
+fisheyeEnabled.checked = DEFAULT_SCREEN_FISHEYE.enabled;
+fisheyeK1.value = String(DEFAULT_SCREEN_FISHEYE.k1);
+fisheyeK2.value = String(DEFAULT_SCREEN_FISHEYE.k2);
+fisheyeStrength.value = String(DEFAULT_SCREEN_FISHEYE.strength);
+fisheyeRadius.value = String(DEFAULT_SCREEN_FISHEYE.radius);
+const currentFisheyeOptions = (): ScreenFisheyeOptions => ({
+  enabled: fisheyeEnabled.checked,
+  k1: Number(fisheyeK1.value),
+  k2: Number(fisheyeK2.value),
+  strength: Number(fisheyeStrength.value),
+  radius: Number(fisheyeRadius.value),
+});
+const renderFisheye = () => {
+  const options = currentFisheyeOptions();
+  document.querySelector("#fisheye-k1-value")!.textContent =
+    options.k1.toFixed(2);
+  document.querySelector("#fisheye-k2-value")!.textContent =
+    options.k2.toFixed(2);
+  document.querySelector("#fisheye-strength-value")!.textContent =
+    options.strength.toFixed(2);
+  document.querySelector("#fisheye-radius-value")!.textContent =
+    `${Math.round(options.radius * 100)}%`;
+  fisheyeStatus.textContent = options.enabled
+    ? `radial polynomial · k1 ${options.k1.toFixed(2)} · k2 ${options.k2.toFixed(2)} · demo-only`
+    : "effect disabled · demo-only";
+  fisheye.setOptions(options);
+};
+fisheyeEnabled.onchange = renderFisheye;
+fisheyeK1.oninput = renderFisheye;
+fisheyeK2.oninput = renderFisheye;
+fisheyeStrength.oninput = renderFisheye;
+fisheyeRadius.oninput = renderFisheye;
+renderFisheye();
 
 const activateTab = (tab: string, focus = false) => {
   for (const button of tabButtons) {
@@ -643,6 +693,7 @@ featureQueryToggle.onclick = () => {
 
 try {
   await basemap.addTo(map);
+  map.addLayer(fisheye, basemap.layerIds.interaction);
 } catch (error) {
   status.textContent = error instanceof Error ? error.message : String(error);
   throw error;
@@ -1334,4 +1385,4 @@ settingsToggle.onclick = () => {
 window.addEventListener("beforeunload", () => basemap.remove());
 
 // Read-only demo handles used by the interaction test harness.
-Object.assign(window, { __badMapDemo: { map, basemap, diagnostics } });
+Object.assign(window, { __badMapDemo: { map, basemap, fisheye, diagnostics } });
