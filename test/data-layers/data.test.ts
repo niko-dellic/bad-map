@@ -5,7 +5,11 @@ import {
   serializeDataLayer,
 } from "../../src/data-layers";
 import { LowResBasemap } from "../../src/basemap/low-res-basemap";
-import type { LowResDataLayer, RasterViewState } from "../../src/types";
+import type {
+  LowResDataLayer,
+  LowResDataLayerUpdate,
+  RasterViewState,
+} from "../../src/types";
 
 const state: RasterViewState = {
   center: { lng: 0, lat: 0 },
@@ -424,4 +428,64 @@ describe("extensible low-resolution data layers", () => {
       basemap.stepTripsPlayback("transport", Number.POSITIVE_INFINITY),
     ).toThrow("finite");
   });
+
+  it("requires matching typed patches and leaves mismatches unchanged", () => {
+    const basemap = new LowResBasemap({
+      dataLayers: [
+        {
+          id: "place",
+          type: "waypoint",
+          data: [{ position: [0, 0] }],
+          size: 20,
+        },
+      ],
+    });
+
+    expect(() =>
+      basemap.updateDataLayer("place", {
+        type: "trips",
+        width: 4,
+      }),
+    ).toThrow(/is waypoint, not trips/);
+    expect(basemap.getDataLayers()[0]).toMatchObject({
+      id: "place",
+      type: "waypoint",
+      visible: true,
+    });
+    expect(() =>
+      basemap.updateDataLayer("place", { type: "waypoint", size: 28 }),
+    ).not.toThrow();
+    basemap.setDataLayerVisible("place", false);
+    expect(basemap.getDataLayers()[0]?.visible).toBe(false);
+  });
 });
+
+if (false) {
+  const acceptsWaypoint: LowResDataLayerUpdate = {
+    type: "waypoint",
+    size: 24,
+    style: "caret",
+  };
+  void acceptsWaypoint;
+
+  const acceptsTrips: LowResDataLayerUpdate = {
+    type: "trips",
+    width: 3,
+    playing: false,
+  };
+  void acceptsTrips;
+
+  const rejectsHeatmapWaypointStyle: LowResDataLayerUpdate = {
+    type: "heatmap",
+    // @ts-expect-error heatmap patches cannot contain waypoint styling
+    style: "caret",
+  };
+  void rejectsHeatmapWaypointStyle;
+
+  const rejectsWaypointPlayback: LowResDataLayerUpdate = {
+    type: "waypoint",
+    // @ts-expect-error waypoint patches cannot contain trip playback fields
+    playing: true,
+  };
+  void rejectsWaypointPlayback;
+}

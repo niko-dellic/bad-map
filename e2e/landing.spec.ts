@@ -40,7 +40,7 @@ test("promotes the package and embeds the interactive demo", async ({
   );
   await expect(page.getByRole("link", { name: "docs" })).toHaveAttribute(
     "href",
-    "/docs/",
+    "https://github.com/niko-dellic/bad-map#readme",
   );
   const editableStyles = await page.request.get("/demo/landing.css");
   expect(editableStyles.ok()).toBe(true);

@@ -1,8 +1,9 @@
 {
   "name": "bad-map",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "A semantic low-resolution Braille basemap for MapLibre GL JS",
   "author": "niko-dellic",
+  "packageManager": "npm@11.6.2",
   "type": "module",
   "sideEffects": false,
   "files": [
@@ -44,8 +45,8 @@
     "dev": "vite --host 127.0.0.1",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:functional": "playwright test e2e/basemap.spec.ts e2e/landing.spec.ts --grep-invert @performance",
-    "test:e2e:performance": "playwright test e2e/basemap.spec.ts --grep @performance",
+    "test:e2e:functional": "playwright test e2e/data.spec.ts e2e/camera.spec.ts e2e/ui.spec.ts e2e/lifecycle.spec.ts e2e/landing.spec.ts e2e/docs.spec.ts --grep-invert @performance",
+    "test:e2e:performance": "playwright test e2e/lifecycle.spec.ts --grep @performance",
     "test:package": "npm run build && node scripts/test-package.mjs",
     "test:all": "npm test && npm run test:e2e",
     "test:watch": "vitest",
@@ -60,7 +61,12 @@
     "maps",
     "vector-tiles",
     "braille",
-    "pixel-art"
+    "pixel-art",
+    "webgl",
+    "typescript",
+    "geojson",
+    "heatmap",
+    "cartography"
   ],
   "license": "MIT",
   "dependencies": {

@@ -15,19 +15,10 @@ export {
   transit,
   weather,
 } from "./semantic/packs.js";
-export {
-  FillClass,
-  LabelInk,
-  LineClass,
-  bandFor,
-  effectiveStyleZoom,
-  sourceZoom,
-} from "./semantic/style.js";
 export type {
   BuiltinThemeName,
   BuiltinLayerAdapter,
   CellGeometry,
-  DataRasterFrame,
   LowResBasemapLike,
   LowResBasemapOptions,
   LowResColorMode,

@@ -62,6 +62,7 @@ import type {
 } from "../workers/data-protocol.js";
 import {
   fogStateEquals,
+  normalizeCamera,
   normalizeBuildings3D,
   normalizeFog,
   normalizeHeatmap,
@@ -70,6 +71,7 @@ import {
   validateColorMode,
   validateFog,
   validateHeatmap,
+  validateProjectionMode,
   type FogState,
   type HeatmapState,
 } from "./options.js";
@@ -188,7 +190,9 @@ export class LowResBasemap {
     validateCell(this.#cell);
     this.#baseTheme = resolveTheme(options.theme);
     this.#colorMode = validateColorMode(options.colorMode ?? "greyscale");
-    this.#projectionMode = options.projectionMode ?? "surface";
+    this.#projectionMode = validateProjectionMode(
+      options.projectionMode ?? "surface",
+    );
     this.#buildings3D = normalizeBuildings3D(options.buildings3D);
     this.#fog = normalizeFog(options.fog);
     this.#heatmap = normalizeHeatmap(options.heatmap);
@@ -196,11 +200,11 @@ export class LowResBasemap {
     this.#storeDataLayer(this.#defaultHeatmapLayer());
     this.#featureInteractionEnabled = options.featureInteraction ?? true;
     const surface = this.#projectionMode === "surface";
-    this.#camera = {
-      rotation: options.camera?.rotation ?? surface,
-      pitch: options.camera?.pitch ?? surface,
-      maxPitch: options.camera?.maxPitch ?? 60,
-    };
+    this.#camera = normalizeCamera(options.camera, {
+      rotation: surface,
+      pitch: surface,
+      maxPitch: 60,
+    });
     this.#theme = composeTheme(this.#baseTheme, this.#colorMode);
     this.#options = {
       locale: options.locale ?? "en",
@@ -405,8 +409,7 @@ export class LowResBasemap {
   }
 
   setProjectionMode(mode: LowResProjectionMode): this {
-    if (mode !== "screen" && mode !== "surface")
-      throw new TypeError(`Unsupported projection mode: ${String(mode)}`);
+    validateProjectionMode(mode);
     if (mode === this.#projectionMode) return this;
     this.#projectionMode = mode;
     if (this.#map) this.#configureCamera(this.#map, true);
@@ -418,9 +421,8 @@ export class LowResBasemap {
 
   setCamera(options: LowResBasemapOptions["camera"]): this {
     if (!options) return this;
-    this.#camera = { ...this.#camera, ...options };
-    if (!Number.isFinite(this.#camera.maxPitch) || this.#camera.maxPitch < 0)
-      throw new RangeError("maxPitch must be a non-negative number");
+    const next = normalizeCamera(options, this.#camera);
+    this.#camera = next;
     if (this.#map) this.#configureCamera(this.#map, true);
     return this;
   }
@@ -544,15 +546,20 @@ export class LowResBasemap {
     const current = this.#dataLayers.get(id)?.source;
     if (!current || id === DEFAULT_HEATMAP_LAYER_ID)
       throw new RangeError(`Unknown data layer: ${id}`);
+    if (update.type !== current.type)
+      throw new TypeError(
+        `Data layer ${id} is ${current.type}, not ${update.type}`,
+      );
+    const { type: _type, ...patch } = update;
     const source = {
       ...current,
-      ...update,
+      ...patch,
       id,
       type: current.type,
     } as LowResDataLayer;
     const serialized = serializeDataLayer(source);
     this.#dataLayers.set(id, { source, serialized });
-    const patchable = Object.keys(update).every((key) =>
+    const patchable = Object.keys(patch).every((key) =>
       ["visible", "opacity", "order", "pickable"].includes(key),
     );
     if (patchable)
@@ -589,7 +596,13 @@ export class LowResBasemap {
   }
 
   setDataLayerVisible(id: string, visible: boolean): this {
-    return this.updateDataLayer(id, { visible });
+    const layer = this.#dataLayers.get(id)?.source;
+    if (!layer || id === DEFAULT_HEATMAP_LAYER_ID)
+      throw new RangeError(`Unknown data layer: ${id}`);
+    return this.updateDataLayer(id, {
+      type: layer.type,
+      visible,
+    } as LowResDataLayerUpdate);
   }
 
   getDataLayers(): LowResDataLayerState[] {

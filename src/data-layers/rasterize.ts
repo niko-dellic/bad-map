@@ -686,7 +686,11 @@ function paletteColor(
   const segment = Math.min(2.999999, Math.max(0, value) * 3);
   const left = Math.floor(segment);
   const amount = segment - left;
-  return palette[left]!.map((channel, index) =>
-    Math.round(channel + (palette[left + 1]![index]! - channel) * amount),
-  ) as unknown as RGB;
+  const start = palette[left]!;
+  const end = palette[left + 1]!;
+  return [
+    Math.round(start[0] + (end[0] - start[0]) * amount),
+    Math.round(start[1] + (end[1] - start[1]) * amount),
+    Math.round(start[2] + (end[2] - start[2]) * amount),
+  ];
 }

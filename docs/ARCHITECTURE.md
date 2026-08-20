@@ -23,6 +23,29 @@ the root `bad-map` export.
 `src/index.ts` is the only package entrypoint. Internal moves must preserve its
 exports and pass the declaration fixture in `test/fixtures/public-api.d.ts`.
 
+## Dependency direction
+
+Core projection and feature primitives must not import basemap, renderer, demo,
+or worker orchestration. Semantic and data rasterizers may depend on core
+primitives, while workers adapt those rasterizers to transferable protocols.
+The basemap owns lifecycle and coordinates workers and render layers; render
+layers must consume provider interfaces rather than the basemap implementation.
+Demo modules may import the public package surface and demo-only helpers, but
+reusable behavior belongs under `src/`.
+
+## Public API policy
+
+Only symbols exported by `src/index.ts` are supported consumer API. Worker
+protocols, raster frames, semantic buffer enums, render providers, and source
+module paths are implementation details even when declaration generation emits
+their files. Public changes require an intentional declaration snapshot update
+and a changelog migration note. Before `1.0`, removals use a minor version bump;
+after `1.0`, semantic versioning governs compatibility.
+
+`LowResBasemapLike` is intentionally public as the event-target interface.
+Theme composition helpers are also public so applications can derive colors
+that follow the active basemap mode.
+
 ## Data-layer boundary
 
 Reusable layer behavior belongs in `src/data-layers/`. Sample datasets and
@@ -49,6 +72,10 @@ npm run test:e2e:performance
 
 The performance benchmark keeps the 200 ms cached-render acceptance target but
 is not used as a hard gate on variable shared CI hardware.
+
+Browser suites are grouped by data overlays, camera/rendering, demo UI, and
+lifecycle/performance behavior. Shared page helpers belong in one support
+module rather than being copied between specs.
 
 ## Package boundaries
 

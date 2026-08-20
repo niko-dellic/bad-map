@@ -2,11 +2,13 @@ import type {
   CellGeometry,
   LowResBasemapOptions,
   LowResBuildings3DOptions,
+  LowResCameraOptions,
   LowResColorMode,
   LowResFogMode,
   LowResFogOptions,
   LowResHeatmapOptions,
   LowResHeatmapPoint,
+  LowResProjectionMode,
   RGB,
 } from "../types.js";
 
@@ -37,6 +39,12 @@ export interface FogState {
   color?: RGB;
 }
 
+export interface CameraState {
+  rotation: boolean;
+  pitch: boolean;
+  maxPitch: number;
+}
+
 export function validateCell(cell: CellGeometry): void {
   if (
     ![cell.width, cell.height, cell.dotSize].every(
@@ -52,6 +60,28 @@ export function validateColorMode(colorMode: LowResColorMode): LowResColorMode {
   if (colorMode !== "color" && colorMode !== "greyscale")
     throw new TypeError(`Unsupported color mode: ${String(colorMode)}`);
   return colorMode;
+}
+
+export function validateProjectionMode(
+  mode: LowResProjectionMode,
+): LowResProjectionMode {
+  if (mode !== "screen" && mode !== "surface")
+    throw new TypeError(`Unsupported projection mode: ${String(mode)}`);
+  return mode;
+}
+
+export function normalizeCamera(
+  options: LowResCameraOptions | undefined,
+  defaults: CameraState,
+): CameraState {
+  const state = { ...defaults, ...options };
+  if (
+    !Number.isFinite(state.maxPitch) ||
+    state.maxPitch < 0 ||
+    state.maxPitch > 180
+  )
+    throw new RangeError("maxPitch must be between zero and 180 degrees");
+  return state;
 }
 
 export function normalizeBuildings3D(

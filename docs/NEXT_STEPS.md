@@ -1,4 +1,4 @@
-# Next Steps
+# Roadmap
 
 `bad-map` now has the cross-cutting foundations needed to grow beyond a street
 basemap: semantic packs, named sources, quantized scalar fields, time keys,
@@ -23,10 +23,11 @@ geometry, independent labels, typed nonfatal failures, and public MapLibre APIs.
 | 7. Point-density heatmaps      | Foundation complete | Native comparison plus weighted worker kernels, stable domains, compact density buffers, a dedicated data compositor, square-dot dithering, and runtime controls  |
 | 8. Extensible data overlays    | Complete            | ID-based heatmap, waypoint, GeoJSON, and trips layers; independent worker; RGBA/owner buffers; playback; picking; and lazy reference demos                        |
 
-The demo exposes appearance, lattice, camera, layer, source, and heatmap options
-in a resizable tabbed side panel. Its tabs and icon actions remain fixed above
-the scrolling controls. Greyscale, the geographic surface, and camera rotation
-are on by default.
+The demo exposes appearance, lattice, camera, semantic-pack, waypoint, heatmap,
+GeoJSON, animated-trip, fog, and screen-effect controls in a resizable tabbed
+side panel. Its tabs and icon actions remain fixed above the scrolling controls.
+Greyscale, the geographic surface, camera rotation, animated trips, dithered
+fog, and the demo fisheye are on by default; cartographic labels start hidden.
 
 ## Architecture now in place
 

@@ -209,28 +209,16 @@ export type LowResDataLayer =
   | LowResGeoJSONDataLayer
   | LowResTripsDataLayer;
 
-export type LowResDataLayerUpdate = Partial<
-  Omit<LowResDataLayerBase, "id"> & {
-    data: unknown;
-    radius: number;
-    intensity: number;
-    maxDensity: number;
-    palette: readonly [RGB, RGB, RGB, RGB];
-    color: RGB;
-    haloColor: RGB;
-    size: number;
-    style: LowResWaypointStyle;
-    point: LowResGeoJSONPointStyle;
-    line: LowResGeoJSONLineStyle;
-    fill: LowResGeoJSONFillStyle;
-    width: number;
-    trailLength: number;
-    currentTime: number;
-    loopLength: number;
-    speed: number;
-    playing: boolean;
-  }
->;
+type LowResDataLayerPatch<T extends LowResDataLayer> = {
+  /** Must match the type of the stored layer identified by `id`. */
+  type: T["type"];
+} & Partial<Omit<T, "id" | "type">>;
+
+export type LowResDataLayerUpdate =
+  | LowResDataLayerPatch<LowResHeatmapDataLayer>
+  | LowResDataLayerPatch<LowResWaypointDataLayer>
+  | LowResDataLayerPatch<LowResGeoJSONDataLayer>
+  | LowResDataLayerPatch<LowResTripsDataLayer>;
 
 export interface LowResDataLayerState {
   id: string;

@@ -24,6 +24,21 @@ Server-rendering the map itself is intentionally out of scope.
 
 ## Quick start
 
+Give the MapLibre container an explicit size:
+
+```html
+<div id="map"></div>
+<style>
+  html,
+  body,
+  #map {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+  }
+</style>
+```
+
 ```ts
 import { Map } from "maplibre-gl";
 import { LowResBasemap, streets, transit } from "bad-map";
@@ -46,6 +61,30 @@ const basemap = new LowResBasemap({
 await basemap.addTo(map);
 basemap.setLayerVisible("transit", true);
 ```
+
+## Options and defaults
+
+| Option                   | Default                                    | Purpose                                            |
+| ------------------------ | ------------------------------------------ | -------------------------------------------------- |
+| `source`                 | OpenFreeMap                                | Shorthand for the named `base` MVT source          |
+| `sources`                | `{ base: source }`                         | Named OpenMapTiles-compatible TileJSON sources     |
+| `layers`                 | `[streets()]`                              | Serializable semantic pack descriptors             |
+| `theme`                  | `"dark"`                                   | Built-in theme name or complete custom theme       |
+| `colorMode`              | `"greyscale"`                              | Basemap and label color composition                |
+| `projectionMode`         | `"surface"`                                | Geographic surface or fixed screen lattice         |
+| `camera`                 | Surface rotation and pitch, `maxPitch: 60` | Map interaction policy                             |
+| `buildings3D`            | `false`                                    | Native OpenMapTiles building extrusions            |
+| `fog`                    | Dithered and visible                       | Surface-edge atmosphere                            |
+| `heatmap` / `dataLayers` | Empty and hidden                           | Package-owned visualization layers                 |
+| `cell`                   | `8 × 16`, `dotSize: 2`                     | CSS-pixel character and dot geometry               |
+| `locale`                 | `"en"`                                     | Preferred label language                           |
+| `labels`                 | Visible and billboarded                    | Label visibility and surface alignment             |
+| `attribution`            | `true`                                     | Install deduplicated source attribution            |
+| `featureInteraction`     | `true`                                     | Hover and click ownership queries                  |
+| `enforceNorthUp`         | `false`                                    | Disable host-map rotation and pitch while attached |
+| `maxCachedTiles`         | `96`                                       | Shared fallback tile-cache budget                  |
+| `renderThrottleMs`       | `70`                                       | Worker refresh cadence during movement             |
+| `workerFactory`          | Bundled semantic worker                    | Advanced replacement semantic worker hook          |
 
 ## Layer ordering
 
@@ -107,6 +146,11 @@ pack are quantized into a compact scalar texture; the built-in weather and
 topographic factories provide defaults that can be overridden through their
 `numeric` option. Sources currently need MVT data, with OpenMapTiles property
 conventions for the built-in adapters.
+
+`LowResSource.request` supplies serializable `headers`, `credentials`, `mode`,
+and `referrerPolicy` values to TileJSON and tile requests made by the semantic
+worker. Native MapLibre layers, including optional 3D buildings, use MapLibre's
+own source and request configuration instead.
 
 ## Pixelated data layers
 
@@ -212,6 +256,12 @@ basemap.setDataLayer({
 basemap.setTripsPlayback("vehicles", { playing: false, currentTime: 900 });
 basemap.seekTripsPlayback("vehicles", 720, { playing: false });
 basemap.stepTripsPlayback("vehicles", 15);
+
+basemap.updateDataLayer("vehicles", {
+  type: "trips",
+  width: 3,
+  opacity: 0.8,
+});
 ```
 
 `seekTripsPlayback` and `stepTripsPlayback` support video-style timelines
@@ -230,6 +280,16 @@ reproject at display refresh rate. `queryDataFeatures` and the
 winning dot owner independently from basemap feature queries. Input URLs remain
 the application's responsibility; the package accepts parsed data and has no
 deck.gl runtime dependency.
+
+Data picking is independent from basemap feature picking:
+
+```ts
+basemap.on("datafeatureclick", ({ feature }) => {
+  console.log(feature.layerId, feature.featureId, feature.properties);
+});
+
+const features = basemap.queryDataFeatures({ x: 320, y: 180 });
+```
 
 ## Camera modes
 
@@ -338,9 +398,10 @@ The building source defaults to the named `base` source and expects an
 OpenMapTiles `building` layer with `render_height`, `render_min_height`, and
 `hide_3d` properties. Extrusions use the active theme and greyscale mode. They
 are smooth native geometry by design; the semantic ground map retains its
-square-dot treatment. Sources requiring custom authorization should configure
-those requests through the host MapLibre map. Terrain elevation is not yet part
-of surface mode.
+square-dot treatment. Configure authorization for the semantic worker through
+`LowResSource.request`; configure authorization for the native building source
+through the host MapLibre map. Terrain elevation is not yet part of surface
+mode.
 
 ## Runtime API
 
@@ -362,7 +423,9 @@ of surface mode.
 - `setTripsPlayback(...)`, `seekTripsPlayback(...)`,
   `stepTripsPlayback(...)`, `getTripsPlayback(...)`, and
   `queryDataFeatures(...)`
-- `setSelectedFeature(...)`, `queryFeatures(...)`, and `refresh()`
+- `setFeatureInteractionEnabled(...)`, `getFeatureInteractionEnabled()`,
+  `setSelectedFeature(...)`, `queryFeatures(...)`, and `refresh()`
+- typed `on(...)` and `off(...)` event subscriptions
 - typed load, render, error, basemap-feature, data-feature, selection, style,
   layer, time, projection, 3D-building, fog, and heatmap events
 
@@ -400,11 +463,24 @@ Attribution from named sources is deduplicated into MapLibre's attribution
 control. Do not disable it unless equivalent visible attribution is supplied by
 the host application.
 
+## Troubleshooting
+
+- **Blank or zero-sized map:** give the map container an explicit width and
+  height before constructing MapLibre.
+- **Server-rendering errors:** import and initialize both MapLibre and
+  `bad-map` in a client-only component after mount.
+- **Worker or CSP failures:** allow workers created from the application bundle
+  and include the corresponding `worker-src` policy.
+- **TileJSON or tile failures:** confirm browser CORS access and place
+  serializable authorization values in `LowResSource.request`.
+- **Unsupported rendering:** `bad-map` requires WebGL 2 and Web Mercator; it
+  does not currently provide a canvas, WebGL 1, globe, or server renderer.
+
 ## Development
 
 The repository is organized by internal domain while publishing one npm
-package. See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for module boundaries and the
-expected extension path for new data-layer types.
+package. See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for module boundaries and
+the expected extension path for new data-layer types.
 
 ```sh
 npm ci

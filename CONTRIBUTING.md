@@ -15,7 +15,9 @@ documentation fixes, tests, and implementation work are welcome.
 
 ## Local development
 
-Use a supported Node.js release (Node 20.19 or newer) and npm.
+Use Node 20.19 or Node 24 with npm. The repository's `packageManager` field
+records the maintainer toolchain; CI verifies both Node lines, while the full
+browser and packed-package checks run on Node 24.
 
 ```sh
 npm ci
@@ -27,6 +29,12 @@ npm run test:e2e:functional
 Run `npm run dev` for the demonstration app. The full `npm run test:e2e`
 command also runs visual comparisons and may require an intentional baseline
 update when rendering changes.
+
+Run a focused unit file with `npx vitest run path/to/file.test.ts`. Run a focused
+browser test with `npx playwright test path/to/file.spec.ts -g "test name"`.
+When a visual change is intentional, review the rendered image before running
+`npx playwright test e2e/visual.spec.ts --update-snapshots`; visual baselines are
+platform-specific.
 
 ## Pull requests
 

@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+## 0.10.0
+
+### Added
+
+- Atomic constructor and runtime validation for projection and camera options.
+- Node 20 compatibility coverage, superseded-run cancellation, and monthly
+  dependency automation.
+- A canonical README options reference, picking example, and troubleshooting
+  guide.
+
+### Changed
+
+- Made data-layer patches discriminated by layer type. Calls to
+  `updateDataLayer` must now include the stored layer type, for example
+  `updateDataLayer("vehicles", { type: "trips", width: 3 })`.
+- Split demo controllers and browser tests by responsibility without changing
+  their behavior.
+- Replaced the duplicate documentation page with a redirect to the canonical
+  README and refreshed contributor, architecture, roadmap, and release guides.
+
+### Removed
+
+- Removed implementation-only semantic buffer enums and zoom helpers from the
+  package root: `FillClass`, `LabelInk`, `LineClass`, `bandFor`,
+  `effectiveStyleZoom`, and `sourceZoom`.
+- Removed the internal `DataRasterFrame` type from the package root.
+
 ## 0.9.1
 
 ### Changed
