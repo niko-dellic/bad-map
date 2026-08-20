@@ -16,9 +16,16 @@ import {
   topographic,
   transit,
   type LowResDataFeature,
-  type LowResTrip,
   type RGB,
 } from "../src";
+import {
+  highwayKey,
+  loadHighwayData,
+  type HighwayFeature,
+  type HighwayProperties,
+} from "./data-sources/highways";
+import { loadPickupData, type PickupRow } from "./data-sources/pickups";
+import { loadTrips } from "./data-sources/trips";
 import {
   DEFAULT_SCREEN_VIGNETTE,
   drawScreenVignette,
@@ -58,14 +65,6 @@ const BASE_SOURCE = {
   tileJSON: "https://tiles.openfreemap.org/planet",
   attribution: "OpenFreeMap © OpenMapTiles · Data © OpenStreetMap contributors",
 };
-const UBER_DATA_URL =
-  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/screen-grid/uber-pickup-locations.json";
-const HIGHWAY_ROADS_URL =
-  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/highway/roads.json";
-const HIGHWAY_ACCIDENTS_URL =
-  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/highway/accidents.csv";
-const TRIPS_DATA_URL =
-  "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/trips/trips-v7.json";
 const SEARCH_WAYPOINT_LAYER = "demo-search-waypoint";
 const HIGHWAY_LAYER = "demo-highway-safety";
 const TRIPS_LAYER = "demo-nyc-trips";
@@ -815,12 +814,6 @@ for (const descriptor of packDescriptors) {
   packs.append(label);
 }
 
-type PickupRow = readonly [number, number, number];
-interface PickupData {
-  rows: PickupRow[];
-  compact: Float32Array;
-}
-
 const heatmapMode = document.querySelector<HTMLSelectElement>("#heatmap-mode")!;
 const heatmapRadius =
   document.querySelector<HTMLInputElement>("#heatmap-radius")!;
@@ -830,42 +823,8 @@ const heatmapOpacity =
   document.querySelector<HTMLInputElement>("#heatmap-opacity")!;
 const heatmapStatus =
   document.querySelector<HTMLOutputElement>("#heatmap-status")!;
-let pickupDataPromise: Promise<PickupData> | undefined;
 let lowResHeatmapLoaded = false;
-
-const loadPickupData = (): Promise<PickupData> => {
-  pickupDataPromise ??= fetch(UBER_DATA_URL)
-    .then((response) => {
-      if (!response.ok)
-        throw new Error(`Pickup request failed (${response.status})`);
-      return response.json() as Promise<unknown>;
-    })
-    .then((value) => {
-      if (!Array.isArray(value)) throw new TypeError("Unexpected pickup data");
-      const rows: PickupRow[] = [];
-      for (const candidate of value) {
-        if (
-          !Array.isArray(candidate) ||
-          candidate.length < 2 ||
-          !candidate.slice(0, 3).every(Number.isFinite)
-        )
-          continue;
-        rows.push([
-          Number(candidate[0]),
-          Number(candidate[1]),
-          Number(candidate[2] ?? 1),
-        ]);
-      }
-      const compact = new Float32Array(rows.length * 3);
-      rows.forEach(([lng, lat, weight], index) => {
-        compact[index * 3] = lng;
-        compact[index * 3 + 1] = lat;
-        compact[index * 3 + 2] = weight;
-      });
-      return { rows, compact };
-    });
-  return pickupDataPromise;
-};
+let pickupDataLoaded = false;
 
 const ensureNativeHeatmap = (rows: readonly PickupRow[]) => {
   if (!map.getSource(NATIVE_HEATMAP_SOURCE)) {
@@ -945,7 +904,7 @@ const applyHeatmapMode = async () => {
     if (map.getLayer(NATIVE_HEATMAP_LAYER))
       map.setLayoutProperty(NATIVE_HEATMAP_LAYER, "visibility", "none");
     basemap.setHeatmapVisible(false);
-    heatmapStatus.textContent = pickupDataPromise
+    heatmapStatus.textContent = pickupDataLoaded
       ? "pickup data ready"
       : "loads 100,000 NYC pickups on selection";
     return;
@@ -954,6 +913,7 @@ const applyHeatmapMode = async () => {
   heatmapStatus.textContent = "loading pickup data…";
   try {
     const data = await loadPickupData();
+    pickupDataLoaded = true;
     if (mode === "native") {
       basemap.setHeatmapVisible(false);
       ensureNativeHeatmap(data.rows);
@@ -995,21 +955,6 @@ heatmapRadius.oninput = applyHeatmapControls;
 heatmapIntensity.oninput = applyHeatmapControls;
 heatmapOpacity.oninput = applyHeatmapControls;
 
-interface HighwayProperties {
-  state: string;
-  type: string;
-  id: string;
-  name: string;
-  length: number;
-  incidents?: number;
-  fatalities?: number;
-}
-type HighwayFeature = Feature<LineString | MultiLineString, HighwayProperties>;
-interface HighwayData {
-  roads: FeatureCollection<LineString | MultiLineString, HighwayProperties>;
-  accidents: globalThis.Map<string, { incidents: number; fatalities: number }>;
-}
-
 const highwayMode = document.querySelector<HTMLSelectElement>("#highway-mode")!;
 const highwayYear = document.querySelector<HTMLSelectElement>("#highway-year")!;
 const highwayColor =
@@ -1020,44 +965,8 @@ const highwayOpacity =
   document.querySelector<HTMLInputElement>("#highway-opacity")!;
 const highwayStatus =
   document.querySelector<HTMLOutputElement>("#highway-status")!;
-let highwayDataPromise: Promise<HighwayData> | undefined;
 let highwayFocused = false;
-
-const highwayKey = (
-  properties: Pick<HighwayProperties, "state" | "type" | "id">,
-) => `${properties.state}-${properties.type}-${properties.id}`;
-
-const loadHighwayData = () => {
-  highwayDataPromise ??= Promise.all([
-    fetch(HIGHWAY_ROADS_URL).then((response) => {
-      if (!response.ok)
-        throw new Error(`Road request failed (${response.status})`);
-      return response.json() as Promise<
-        FeatureCollection<LineString | MultiLineString, HighwayProperties>
-      >;
-    }),
-    fetch(HIGHWAY_ACCIDENTS_URL).then(async (response) => {
-      if (!response.ok)
-        throw new Error(`Accident request failed (${response.status})`);
-      return response.text();
-    }),
-  ]).then(([roads, csv]) => {
-    const accidents = new globalThis.Map<
-      string,
-      { incidents: number; fatalities: number }
-    >();
-    for (const row of csv.trim().split(/\r?\n/).slice(1)) {
-      const [state, type, id, year, incidents, fatalities] = row.split(",");
-      if (!state || !type || !id || !year) continue;
-      accidents.set(`${year}:${state}-${type}-${id}`, {
-        incidents: Number(incidents) || 0,
-        fatalities: Number(fatalities) || 0,
-      });
-    }
-    return { roads, accidents };
-  });
-  return highwayDataPromise;
-};
+let highwayDataLoaded = false;
 
 const SAFETY_COLORS = [
   [26, 152, 80],
@@ -1092,7 +1001,7 @@ const safetyColor = (value: number) => {
 const applyHighwayLayer = async () => {
   if (highwayMode.value === "off") {
     basemap.removeDataLayer(HIGHWAY_LAYER);
-    highwayStatus.textContent = highwayDataPromise
+    highwayStatus.textContent = highwayDataLoaded
       ? "highway data ready"
       : "loads nationwide roads on selection";
     return;
@@ -1101,6 +1010,7 @@ const applyHighwayLayer = async () => {
   highwayStatus.textContent = "loading highway data…";
   try {
     const data = await loadHighwayData();
+    highwayDataLoaded = true;
     const year = Number(highwayYear.value);
     const roads: FeatureCollection<
       LineString | MultiLineString,
@@ -1202,8 +1112,8 @@ const tripsWidth = document.querySelector<HTMLInputElement>("#trips-width")!;
 const tripsOpacity =
   document.querySelector<HTMLInputElement>("#trips-opacity")!;
 const tripsStatus = document.querySelector<HTMLOutputElement>("#trips-status")!;
-let tripsDataPromise: Promise<LowResTrip[]> | undefined;
 let tripsFocused = false;
+let tripsDataLoaded = false;
 let tripsLayerReady = false;
 let tripsScrubbing = false;
 let tripsResumeAfterScrub = false;
@@ -1232,38 +1142,6 @@ const setTripsTransportEnabled = (enabled: boolean) => {
   tripsTime.disabled = !enabled;
 };
 
-const loadTrips = () => {
-  tripsDataPromise ??= fetch(TRIPS_DATA_URL)
-    .then((response) => {
-      if (!response.ok)
-        throw new Error(`Trips request failed (${response.status})`);
-      return response.json() as Promise<unknown>;
-    })
-    .then((value) => {
-      if (!Array.isArray(value)) throw new TypeError("Unexpected trips data");
-      const trips: LowResTrip[] = [];
-      for (const [index, candidate] of value.entries()) {
-        if (!candidate || typeof candidate !== "object") continue;
-        const source = candidate as {
-          vendor?: number;
-          path?: [number, number][];
-          timestamps?: number[];
-        };
-        if (!Array.isArray(source.path) || !Array.isArray(source.timestamps))
-          continue;
-        trips.push({
-          id: index,
-          path: source.path,
-          timestamps: source.timestamps,
-          color: source.vendor === 0 ? [253, 128, 93] : [23, 184, 190],
-          properties: { vendor: source.vendor ?? -1 },
-        });
-      }
-      return trips;
-    });
-  return tripsDataPromise;
-};
-
 const syncTripsOutputs = () => {
   document.querySelector("#trips-speed-value")!.textContent =
     `${Number(tripsSpeed.value)}×`;
@@ -1280,7 +1158,7 @@ const applyTripsMode = async ({ focus = true }: { focus?: boolean } = {}) => {
     basemap.removeDataLayer(TRIPS_LAYER);
     setTripsTransportEnabled(false);
     syncTripsPlayButton(false);
-    tripsStatus.textContent = tripsDataPromise
+    tripsStatus.textContent = tripsDataLoaded
       ? "trip data ready"
       : "loads NYC trips on selection";
     return;
@@ -1289,6 +1167,7 @@ const applyTripsMode = async ({ focus = true }: { focus?: boolean } = {}) => {
   tripsStatus.textContent = "loading trip data…";
   try {
     const trips = await loadTrips();
+    tripsDataLoaded = true;
     basemap.setDataLayer({
       id: TRIPS_LAYER,
       type: "trips",

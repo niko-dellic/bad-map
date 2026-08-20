@@ -1,6 +1,10 @@
-export { LowResBasemap } from "./low-res-basemap.js";
-export { DARK_THEME, LIGHT_THEME } from "./theme.js";
-export { composeTheme, greyscaleColor, relativeLuminance } from "./theme.js";
+export { LowResBasemap } from "./basemap/low-res-basemap.js";
+export { DARK_THEME, LIGHT_THEME } from "./themes/index.js";
+export {
+  composeTheme,
+  greyscaleColor,
+  relativeLuminance,
+} from "./themes/index.js";
 export {
   featureMatches,
   landuse,
@@ -10,7 +14,7 @@ export {
   topographic,
   transit,
   weather,
-} from "./packs.js";
+} from "./semantic/packs.js";
 export {
   FillClass,
   LabelInk,
@@ -18,7 +22,7 @@ export {
   bandFor,
   effectiveStyleZoom,
   sourceZoom,
-} from "./style.js";
+} from "./semantic/style.js";
 export type {
   BuiltinThemeName,
   BuiltinLayerAdapter,

@@ -389,6 +389,10 @@ the host application.
 
 ## Development
 
+The repository is organized by internal domain while publishing one npm
+package. See [ARCHITECTURE.md](./ARCHITECTURE.md) for module boundaries and the
+expected extension path for new data-layer types.
+
 ```sh
 npm ci
 npm run verify

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const expected = readFileSync("test/fixtures/public-api.d.ts", "utf8").trim();
-const actual = ["index.d.ts", "low-res-basemap.d.ts"]
+const actual = ["index.d.ts", "basemap/low-res-basemap.d.ts"]
   .map(
     (file) => `// dist/${file}\n${readFileSync(`dist/${file}`, "utf8").trim()}`,
   )

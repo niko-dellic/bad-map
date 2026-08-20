@@ -1,14 +1,14 @@
 // dist/index.d.ts
-export { LowResBasemap } from "./low-res-basemap.js";
-export { DARK_THEME, LIGHT_THEME } from "./theme.js";
-export { composeTheme, greyscaleColor, relativeLuminance } from "./theme.js";
-export { featureMatches, landuse, marine, political, streets, topographic, transit, weather, } from "./packs.js";
-export { FillClass, LabelInk, LineClass, bandFor, effectiveStyleZoom, sourceZoom, } from "./style.js";
+export { LowResBasemap } from "./basemap/low-res-basemap.js";
+export { DARK_THEME, LIGHT_THEME } from "./themes/index.js";
+export { composeTheme, greyscaleColor, relativeLuminance, } from "./themes/index.js";
+export { featureMatches, landuse, marine, political, streets, topographic, transit, weather, } from "./semantic/packs.js";
+export { FillClass, LabelInk, LineClass, bandFor, effectiveStyleZoom, sourceZoom, } from "./semantic/style.js";
 export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, DataRasterFrame, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResDataAccessor, LowResDataFeature, LowResDataLayer, LowResDataLayerBase, LowResDataLayerState, LowResDataLayerUpdate, LowResCameraOptions, LowResBuildings3DOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResFogMode, LowResFogOptions, LowResHeatmapOptions, LowResHeatmapDataLayer, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResLabelsOptions, LowResProjectionMode, LowResGeoJSONDataLayer, LowResGeoJSONFillStyle, LowResGeoJSONLineStyle, LowResGeoJSONPointStyle, LowResSource, LowResTheme, LowResTrip, LowResTripsDataLayer, LowResTripsPlayback, LowResTripsSeekOptions, LowResWaypoint, LowResWaypointDataLayer, LowResWaypointStyle, RGB, } from "./types.js";
 
-// dist/low-res-basemap.d.ts
+// dist/basemap/low-res-basemap.d.ts
 import { type Map as MapLibreMap, type PointLike } from "maplibre-gl";
-import type { CellGeometry, LowResBasemapOptions, LowResColorMode, LowResDataFeature, LowResDataLayer, LowResDataLayerState, LowResDataLayerUpdate, LowResEventMap, LowResFeature, LowResFogOptions, LowResHeatmapOptions, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTripsPlayback, LowResTripsSeekOptions, RGB } from "./types.js";
+import type { CellGeometry, LowResBasemapOptions, LowResColorMode, LowResDataFeature, LowResDataLayer, LowResDataLayerState, LowResDataLayerUpdate, LowResEventMap, LowResFeature, LowResFogOptions, LowResHeatmapOptions, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTripsPlayback, LowResTripsSeekOptions, RGB } from "../types.js";
 type Listener<K extends keyof LowResEventMap> = (event: LowResEventMap[K]) => void;
 export declare class LowResBasemap {
     #private;

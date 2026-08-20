@@ -48,6 +48,9 @@
   palette independent from basemap greyscale.
 - Excluded demo assets and implementation-only worker artifacts from the npm
   tarball while keeping production source maps for the public bundle.
+- Organized library code and tests by basemap, core, data-layer, render,
+  semantic, theme, tile, and worker domains without changing the root package
+  API.
 
 ## 0.8.0
 

@@ -6,6 +6,7 @@
   "type": "module",
   "sideEffects": false,
   "files": [
+    "ARCHITECTURE.md",
     "CHANGELOG.md",
     "dist",
     "LICENSE",
