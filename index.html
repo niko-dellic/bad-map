@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0e0f12" />
+    <meta name="theme-color" content="#070808" />
     <meta
       name="description"
       content="bad-map is a deliberately low-resolution, less-dependable map renderer for MapLibre GL JS."
@@ -13,6 +13,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <link rel="stylesheet" href="/demo/landing-font.css" />
     <link rel="stylesheet" href="/demo/landing.css" />
     <title>bad-map — make your map worse</title>
   </head>
@@ -43,9 +44,17 @@
           <div class="install-row" aria-label="Installation command">
             <span aria-hidden="true">$</span>
             <code>npm install bad-map</code>
+            <button
+              type="button"
+              class="copy-button"
+              aria-label="Copy installation command"
+              data-copy="npm install bad-map"
+            >
+              copy
+            </button>
           </div>
           <div class="hero-actions">
-            <a class="button button-primary" href="#demo">see the damage</a>
+            <a class="button button-primary" href="#demo">try it</a>
             <a
               class="button"
               href="https://www.npmjs.com/package/bad-map"
@@ -112,16 +121,55 @@
         <div class="install-row" aria-label="Installation command">
           <span aria-hidden="true">$</span>
           <code>npm install bad-map</code>
+          <button
+            type="button"
+            class="copy-button"
+            aria-label="Copy installation command"
+            data-copy="npm install bad-map"
+          >
+            copy
+          </button>
         </div>
       </section>
     </main>
 
     <footer>
-      <p>bad-map · MIT licensed · data remains somebody else’s problem</p>
+      <div class="footer-copy">
+        <p>bad-map · MIT licensed · data remains somebody else’s problem</p>
+        <p class="type-credit">
+          Headings set in
+          <a
+            href="https://velvetyne.fr/fonts/terminal-grotesque/"
+            rel="noreferrer"
+            >Terminal Grotesque Open</a
+          >
+          by Raphaël Bastide, with a contribution from Jérémy Landes,
+          distributed by Velvetyne.
+        </p>
+      </div>
       <a href="https://github.com/niko-dellic/bad-map">source on github ↗</a>
     </footer>
 
     <script type="module" src="/demo/hero.ts"></script>
     <script type="module" src="/demo/embed.ts"></script>
+    <script>
+      document.querySelectorAll(".copy-button").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const textToCopy =
+            button.getAttribute("data-copy") || "npm install bad-map";
+          try {
+            await navigator.clipboard.writeText(textToCopy);
+            button.textContent = "copied";
+            button.classList.add("copied");
+            setTimeout(() => {
+              button.textContent = "copy";
+              button.classList.remove("copied");
+            }, 2000);
+          } catch (err) {
+            console.error("Failed to copy text: ", err);
+          }
+        });
+      });
+    </script>
   </body>
 </html>

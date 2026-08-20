@@ -37,6 +37,31 @@ test("promotes the package and embeds the interactive demo", async ({
   await expect(
     page.getByRole("heading", { name: "Make your map worse." }),
   ).toBeVisible();
+  await expect(page.locator('link[href="/demo/landing-font.css"]')).toHaveCount(
+    1,
+  );
+  const editableStyles = await page.request.get("/demo/landing.css");
+  expect(editableStyles.ok()).toBe(true);
+  const editableStylesText = await editableStyles.text();
+  expect(editableStylesText).toContain("PROMO PAGE STYLES");
+  expect(editableStylesText).toContain("--accent: #ff4f3b");
+  expect(editableStylesText).not.toContain("base64");
+  await expect(page.locator("#hero-title span")).toHaveCSS(
+    "color",
+    "rgb(255, 79, 59)",
+  );
+  await expect(page.locator(".type-credit")).toContainText(
+    "Headings set in Terminal Grotesque Open",
+  );
+  const headingFont = await page
+    .locator("#hero-title")
+    .evaluate((element) => getComputedStyle(element).fontFamily);
+  expect(headingFont).toContain("Terminal Grotesque Open");
+  const terminalGrotesqueLoaded = await page.evaluate(async () => {
+    await document.fonts.load("72px 'Terminal Grotesque Open'");
+    return document.fonts.check("72px 'Terminal Grotesque Open'");
+  });
+  expect(terminalGrotesqueLoaded).toBe(true);
   await expect(page.getByText("npm install bad-map").first()).toBeVisible();
   await expect(
     page.getByRole("link", { name: "install anyway ↗" }),
@@ -46,6 +71,10 @@ test("promotes the package and embeds the interactive demo", async ({
   ).toHaveAttribute("href", "https://github.com/niko-dellic/bad-map");
   await expect(page.locator("#status")).toContainText("rendered in");
   await expect(page.locator("#hero-map")).toHaveAttribute("data-ready", "true");
+  await expect(page.locator("#hero-map")).toHaveAttribute(
+    "data-city",
+    /^(new-york|mexico-city|sao-paulo|buenos-aires|london|paris|istanbul|cairo|lagos|nairobi|cape-town|dubai|mumbai|delhi|bangkok|singapore|shanghai|seoul|tokyo|sydney)$/,
+  );
   await expect(page.locator("#hero-map .maplibregl-canvas")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Search places" }),
@@ -53,14 +82,54 @@ test("promotes the package and embeds the interactive demo", async ({
   await expect(page.locator("#settings")).toBeHidden();
   await expectDemoBoundedByWindow(page);
 
-  const initialBearing = Number(
-    await page.locator("#hero-map").getAttribute("data-bearing"),
-  );
+  const initialCenter = await page
+    .locator("#hero-map")
+    .getAttribute("data-center");
   await page.waitForTimeout(250);
-  const rotatedBearing = Number(
-    await page.locator("#hero-map").getAttribute("data-bearing"),
+  const wanderedCenter = await page
+    .locator("#hero-map")
+    .getAttribute("data-center");
+  expect(wanderedCenter).not.toBe(initialCenter);
+});
+
+test("uses a monochrome promo background without data layers", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#hero-map")).toHaveAttribute("data-ready", "true");
+  await expect(page.locator("#hero-map")).toHaveAttribute(
+    "data-color-mode",
+    "greyscale",
   );
-  expect(rotatedBearing).toBeGreaterThan(initialBearing);
+  await expect(page.locator("#hero-map")).toHaveAttribute(
+    "data-data-layer-count",
+    "0",
+  );
+});
+
+test("keeps the promo hero still when reduced motion is requested", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(page.locator("#hero-map")).toHaveAttribute("data-ready", "true");
+
+  const initialCenter = await page
+    .locator("#hero-map")
+    .getAttribute("data-center");
+  const initialBearing = await page
+    .locator("#hero-map")
+    .getAttribute("data-bearing");
+  await page.waitForTimeout(250);
+
+  await expect(page.locator("#hero-map")).toHaveAttribute(
+    "data-center",
+    initialCenter ?? "",
+  );
+  await expect(page.locator("#hero-map")).toHaveAttribute(
+    "data-bearing",
+    initialBearing ?? "",
+  );
 });
 
 test("keeps the embedded canvas bounded on a mobile viewport", async ({

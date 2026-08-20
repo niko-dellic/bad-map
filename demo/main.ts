@@ -28,7 +28,9 @@ import { loadPickupData, type PickupRow } from "./data-sources/pickups";
 import { loadTrips } from "./data-sources/trips";
 import {
   DEFAULT_SCREEN_FISHEYE,
+  DEFAULT_SCREEN_FISHEYE_CONTROLS,
   ScreenFisheyeLayer,
+  screenFisheyeCoefficients,
   type ScreenFisheyeOptions,
 } from "./fisheye";
 import {
@@ -167,8 +169,8 @@ const renderVignette = () => {
     document.querySelector("#vignette-opacity-value")!.textContent =
       `${Math.round(options.opacity * 100)}%`;
     vignetteStatus.textContent = options.enabled
-      ? `${vignetteFalloff.selectedOptions[0]?.textContent ?? "linear"} · ${vignetteBase.value} base · 8×8 CSS-pixel dither · ${vignetteThemeColor.checked ? "theme color" : vignetteColor.value} · demo-only`
-      : "demo overlay disabled";
+      ? `${vignetteFalloff.selectedOptions[0]?.textContent ?? "linear"} · ${vignetteBase.value} base · 8×8 CSS-pixel dither · ${vignetteThemeColor.checked ? "theme color" : vignetteColor.value}`
+      : "overlay disabled";
     drawScreenVignette(vignetteCanvas, options);
   });
 };
@@ -197,45 +199,47 @@ renderVignette();
 
 const fisheyeEnabled =
   document.querySelector<HTMLInputElement>("#fisheye-enabled")!;
-const fisheyeK1 = document.querySelector<HTMLInputElement>("#fisheye-k1")!;
-const fisheyeK2 = document.querySelector<HTMLInputElement>("#fisheye-k2")!;
-const fisheyeStrength =
-  document.querySelector<HTMLInputElement>("#fisheye-strength")!;
+const fisheyeLens = document.querySelector<HTMLInputElement>("#fisheye-lens")!;
+const fisheyeEdgeFocus = document.querySelector<HTMLInputElement>(
+  "#fisheye-edge-focus",
+)!;
 const fisheyeRadius =
   document.querySelector<HTMLInputElement>("#fisheye-radius")!;
 const fisheyeStatus =
   document.querySelector<HTMLOutputElement>("#fisheye-status")!;
 fisheyeEnabled.checked = DEFAULT_SCREEN_FISHEYE.enabled;
-fisheyeK1.value = String(DEFAULT_SCREEN_FISHEYE.k1);
-fisheyeK2.value = String(DEFAULT_SCREEN_FISHEYE.k2);
-fisheyeStrength.value = String(DEFAULT_SCREEN_FISHEYE.strength);
+fisheyeLens.value = String(DEFAULT_SCREEN_FISHEYE_CONTROLS.lens);
+fisheyeEdgeFocus.value = String(DEFAULT_SCREEN_FISHEYE_CONTROLS.edgeFocus);
 fisheyeRadius.value = String(DEFAULT_SCREEN_FISHEYE.radius);
-const currentFisheyeOptions = (): ScreenFisheyeOptions => ({
-  enabled: fisheyeEnabled.checked,
-  k1: Number(fisheyeK1.value),
-  k2: Number(fisheyeK2.value),
-  strength: Number(fisheyeStrength.value),
-  radius: Number(fisheyeRadius.value),
-});
+const currentFisheyeOptions = (): ScreenFisheyeOptions => {
+  const coefficients = screenFisheyeCoefficients(
+    Number(fisheyeLens.value),
+    Number(fisheyeEdgeFocus.value),
+  );
+  return {
+    enabled: fisheyeEnabled.checked,
+    ...coefficients,
+    radius: Number(fisheyeRadius.value),
+  };
+};
 const renderFisheye = () => {
   const options = currentFisheyeOptions();
-  document.querySelector("#fisheye-k1-value")!.textContent =
-    options.k1.toFixed(2);
-  document.querySelector("#fisheye-k2-value")!.textContent =
-    options.k2.toFixed(2);
-  document.querySelector("#fisheye-strength-value")!.textContent =
-    options.strength.toFixed(2);
+  const lens = Number(fisheyeLens.value);
+  const edgeFocus = Number(fisheyeEdgeFocus.value);
+  document.querySelector("#fisheye-lens-value")!.textContent =
+    `${Math.round(lens * 100)}%`;
+  document.querySelector("#fisheye-edge-focus-value")!.textContent =
+    `${Math.round(edgeFocus * 100)}%`;
   document.querySelector("#fisheye-radius-value")!.textContent =
     `${Math.round(options.radius * 100)}%`;
   fisheyeStatus.textContent = options.enabled
-    ? `radial polynomial · k1 ${options.k1.toFixed(2)} · k2 ${options.k2.toFixed(2)} · demo-only`
-    : "effect disabled · demo-only";
+    ? `${Math.round(lens * 100)}% lens · ${Math.round(edgeFocus * 100)}% edge focus`
+    : "effect disabled";
   fisheye.setOptions(options);
 };
 fisheyeEnabled.onchange = renderFisheye;
-fisheyeK1.oninput = renderFisheye;
-fisheyeK2.oninput = renderFisheye;
-fisheyeStrength.oninput = renderFisheye;
+fisheyeLens.oninput = renderFisheye;
+fisheyeEdgeFocus.oninput = renderFisheye;
 fisheyeRadius.oninput = renderFisheye;
 renderFisheye();
 

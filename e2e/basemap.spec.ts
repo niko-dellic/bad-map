@@ -90,6 +90,14 @@ const tripsFixture = [
     ],
     timestamps: [0, 900, 1800],
   },
+  {
+    vendor: 1,
+    path: [
+      [-73.99, 40.71],
+      [-73.98, 40.72],
+    ],
+    timestamps: [900, 900],
+  },
 ];
 
 async function diagnostics(page: import("@playwright/test").Page) {
@@ -629,7 +637,7 @@ test("configures the demo-only dithered screen vignette", async ({ page }) => {
   await expect(color).toHaveValue("#0f0f0f");
   await expect(themeColor).toBeChecked();
   await expect(page.locator("#vignette-status")).toHaveText(
-    "linear · rectangle base · 8×8 CSS-pixel dither · theme color · demo-only",
+    "linear · rectangle base · 8×8 CSS-pixel dither · theme color",
   );
 
   await expect
@@ -701,43 +709,36 @@ test("configures the demo-only dithered screen vignette", async ({ page }) => {
 
   await enabled.uncheck();
   await expect(canvas).toBeHidden();
-  await expect(page.locator("#vignette-status")).toHaveText(
-    "demo overlay disabled",
-  );
+  await expect(page.locator("#vignette-status")).toHaveText("overlay disabled");
 });
 
 test("configures the demo-only fisheye screen pass", async ({ page }) => {
   await page.locator("#tab-fx").click();
   const enabled = page.locator("#fisheye-enabled");
   await expect(enabled).toBeChecked();
-  await expect(page.locator("#fisheye-k1")).toHaveValue("-0.35");
-  await expect(page.locator("#fisheye-k2")).toHaveValue("0");
-  await expect(page.locator("#fisheye-strength")).toHaveValue("1");
+  await expect(page.locator("#fisheye-lens")).toHaveValue("0.35");
+  await expect(page.locator("#fisheye-edge-focus")).toHaveValue("0");
   await expect(page.locator("#fisheye-radius")).toHaveValue("1");
   await expect(page.locator("#fisheye-status")).toHaveText(
-    "radial polynomial · k1 -0.35 · k2 0.00 · demo-only",
+    "35% lens · 0% edge focus",
   );
 
   const before = await diagnostics(page);
   await enabled.uncheck();
-  await expect(page.locator("#fisheye-status")).toHaveText(
-    "effect disabled · demo-only",
-  );
+  await expect(page.locator("#fisheye-status")).toHaveText("effect disabled");
   await page.waitForTimeout(100);
   const undistorted = await page.screenshot({
     clip: { x: 100, y: 100, width: 400, height: 400 },
   });
   await enabled.check();
-  await page.locator("#fisheye-k1").fill("-0.75");
-  await page.locator("#fisheye-k2").fill("0.25");
-  await page.locator("#fisheye-strength").fill("1.4");
+  await page.locator("#fisheye-lens").fill("0.8");
+  await page.locator("#fisheye-edge-focus").fill("0.25");
   await page.locator("#fisheye-radius").fill("1.25");
-  await expect(page.locator("#fisheye-k1-value")).toHaveText("-0.75");
-  await expect(page.locator("#fisheye-k2-value")).toHaveText("0.25");
-  await expect(page.locator("#fisheye-strength-value")).toHaveText("1.40");
+  await expect(page.locator("#fisheye-lens-value")).toHaveText("80%");
+  await expect(page.locator("#fisheye-edge-focus-value")).toHaveText("25%");
   await expect(page.locator("#fisheye-radius-value")).toHaveText("125%");
   await expect(page.locator("#fisheye-status")).toHaveText(
-    "radial polynomial · k1 -0.75 · k2 0.25 · demo-only",
+    "80% lens · 25% edge focus",
   );
   expect(
     await page.evaluate(() => {
@@ -763,9 +764,9 @@ test("configures the demo-only fisheye screen pass", async ({ page }) => {
   ).toEqual({
     options: {
       enabled: true,
-      k1: -0.75,
-      k2: 0.25,
-      strength: 1.4,
+      k1: -0.6,
+      k2: -0.2,
+      strength: 1,
       radius: 1.25,
     },
     layersPresent: true,

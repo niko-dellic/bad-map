@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeScreenFisheyeOptions,
+  screenFisheyeCoefficients,
   screenFisheyeSampleUv,
 } from "../../demo/fisheye";
 
@@ -44,6 +45,15 @@ describe("demo screen fisheye", () => {
     });
     expect(base[0]).toBeLessThan(0.7);
     expect(edgeWeighted[0]).toBeLessThan(base[0]);
+  });
+
+  it("holds total distortion constant while shifting focus toward the edge", () => {
+    const broad = screenFisheyeCoefficients(0.6, 0);
+    const focused = screenFisheyeCoefficients(0.6, 0.75);
+    expect(broad).toEqual({ k1: -0.6, k2: 0, strength: 1 });
+    expect(focused.k1).toBeCloseTo(-0.15);
+    expect(focused.k2).toBeCloseTo(-0.45);
+    expect(focused.k1 + focused.k2).toBeCloseTo(-0.6);
   });
 
   it("passes pixels through while disabled and clamps control ranges", () => {

@@ -2,12 +2,15 @@ import "@fontsource/silkscreen/400.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Map } from "maplibre-gl";
 import { LowResBasemap, streets, transit } from "../src";
+import { heroCameraAt, selectHeroCity } from "./hero-camera";
 
 const container = document.querySelector<HTMLElement>("#hero-map");
 
 if (!container) throw new Error("Unable to find the hero map container");
 
-const initialBearing = -28;
+const city = selectHeroCity();
+const motionPhase = Math.random() * Math.PI * 2;
+const colorMode = "greyscale";
 const map = new Map({
   container,
   style: {
@@ -21,11 +24,11 @@ const map = new Map({
       },
     ],
   },
-  center: [-73.9857, 40.725],
-  zoom: 10.9,
+  center: [...city.center],
+  zoom: city.zoom,
   minZoom: 2,
   maxZoom: 19,
-  bearing: initialBearing,
+  bearing: city.bearing,
   pitch: 58,
   interactive: false,
   attributionControl: false,
@@ -39,7 +42,8 @@ const basemap = new LowResBasemap({
       "OpenFreeMap © OpenMapTiles · Data © OpenStreetMap contributors",
   },
   layers: [streets(), transit({ priority: 20 })],
-  colorMode: "color",
+  colorMode,
+  dataLayers: [],
   labels: false,
   attribution: false,
   featureInteraction: false,
@@ -50,23 +54,30 @@ const basemap = new LowResBasemap({
 
 await basemap.addTo(map);
 container.dataset.ready = "true";
-container.dataset.bearing = String(initialBearing);
+container.dataset.city = city.slug;
+container.dataset.cityName = city.name;
+container.dataset.colorMode = colorMode;
+container.dataset.dataLayerCount = String(basemap.getDataLayers().length);
+container.dataset.center = city.center.join(",");
+container.dataset.bearing = String(city.bearing);
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let visible = true;
 let frame = 0;
-let start = performance.now();
-let pausedBearing = initialBearing;
+let elapsed = 0;
+let previousTime = performance.now();
 
 const animate = (time: number) => {
   if (visible && !document.hidden && !reducedMotion.matches) {
-    const bearing = pausedBearing + (time - start) * 0.0018;
-    map.jumpTo({ bearing });
-    container.dataset.bearing = bearing.toFixed(3);
-  } else {
-    pausedBearing = map.getBearing();
-    start = time;
+    elapsed += Math.min(Math.max(time - previousTime, 0), 100);
+    const camera = heroCameraAt(city, elapsed, motionPhase);
+    map.jumpTo(camera);
+    container.dataset.center = camera.center
+      .map((coordinate) => coordinate.toFixed(6))
+      .join(",");
+    container.dataset.bearing = camera.bearing.toFixed(3);
   }
+  previousTime = time;
   frame = requestAnimationFrame(animate);
 };
 

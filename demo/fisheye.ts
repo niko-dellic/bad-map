@@ -19,6 +19,18 @@ export const DEFAULT_SCREEN_FISHEYE: ScreenFisheyeOptions = {
   radius: 1,
 };
 
+export interface ScreenFisheyeControls {
+  /** Perceptual lens amount from no distortion to maximum fisheye. */
+  lens: number;
+  /** Moves distortion from the broad r² curve toward the edge-focused r⁴ curve. */
+  edgeFocus: number;
+}
+
+export const DEFAULT_SCREEN_FISHEYE_CONTROLS: ScreenFisheyeControls = {
+  lens: Math.abs(DEFAULT_SCREEN_FISHEYE.k1 + DEFAULT_SCREEN_FISHEYE.k2),
+  edgeFocus: 0,
+};
+
 const VERTEX_SHADER = `#version 300 es
 precision highp float;
 in vec2 a_position;
@@ -60,6 +72,28 @@ void main() {
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
+
+/**
+ * Convert simple perceptual controls into the shader's polynomial terms.
+ * Keeping k1 + k2 constant means edge focus changes the curve shape without
+ * unexpectedly changing the total distortion at the configured radius.
+ */
+export function screenFisheyeCoefficients(
+  lens: number,
+  edgeFocus: number,
+): Pick<ScreenFisheyeOptions, "k1" | "k2" | "strength"> {
+  const amount = clamp(lens, 0, 1);
+  const focus = clamp(edgeFocus, 0, 1);
+  const coefficient = (value: number) => {
+    const rounded = Math.round(value * 1_000_000) / 1_000_000;
+    return Object.is(rounded, -0) ? 0 : rounded;
+  };
+  return {
+    k1: coefficient(-amount * (1 - focus)),
+    k2: coefficient(-amount * focus),
+    strength: 1,
+  };
+}
 
 export function normalizeScreenFisheyeOptions(
   options: Partial<ScreenFisheyeOptions> = {},

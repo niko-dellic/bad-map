@@ -423,8 +423,8 @@
                 id="vignette-status"
                 class="section-status"
                 aria-live="polite"
-                >linear · rectangle base · 8×8 CSS-pixel dither · theme color ·
-                demo-only</output
+                >linear · rectangle base · 8×8 CSS-pixel dither · theme
+                color</output
               >
             </section>
 
@@ -435,34 +435,24 @@
                 Enabled</label
               >
               <label
-                >Curvature <output id="fisheye-k1-value">-0.35</output
+                >Lens strength <output id="fisheye-lens-value">35%</output
                 ><input
-                  id="fisheye-k1"
-                  type="range"
-                  min="-2"
-                  max="2"
-                  step="0.05"
-                  value="-0.35"
-              /></label>
-              <label
-                >Edge curve <output id="fisheye-k2-value">0.00</output
-                ><input
-                  id="fisheye-k2"
-                  type="range"
-                  min="-2"
-                  max="2"
-                  step="0.05"
-                  value="0"
-              /></label>
-              <label
-                >Strength <output id="fisheye-strength-value">1.00</output
-                ><input
-                  id="fisheye-strength"
+                  id="fisheye-lens"
                   type="range"
                   min="0"
-                  max="2"
-                  step="0.05"
-                  value="1"
+                  max="1"
+                  step="0.01"
+                  value="0.35"
+              /></label>
+              <label
+                >Edge focus <output id="fisheye-edge-focus-value">0%</output
+                ><input
+                  id="fisheye-edge-focus"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value="0"
               /></label>
               <label
                 >Radius <output id="fisheye-radius-value">100%</output
@@ -478,7 +468,7 @@
                 id="fisheye-status"
                 class="section-status"
                 aria-live="polite"
-                >radial polynomial · k1 -0.35 · k2 0.00 · demo-only</output
+                >35% lens · 0% edge focus</output
               >
             </section>
           </div>
