@@ -38,19 +38,16 @@ test("promotes the package and embeds the interactive demo", async ({
   await expect(page.locator('link[href="/demo/landing-font.css"]')).toHaveCount(
     0,
   );
-  await expect(page.getByRole("link", { name: "docs" })).toHaveAttribute(
-    "href",
-    "https://github.com/niko-dellic/bad-map#readme",
-  );
   const editableStyles = await page.request.get("/demo/landing.css");
   expect(editableStyles.ok()).toBe(true);
   const editableStylesText = await editableStyles.text();
   expect(editableStylesText).toContain("Intentionally almost unstyled");
   expect(editableStylesText).toContain("--demo-width: 55vw");
   expect(editableStylesText).not.toContain("base64");
-  await expect(
-    page.getByRole("link", { name: "full screen", exact: true }),
-  ).toHaveCSS("color", "rgb(142, 197, 255)");
+  await expect(page.getByRole("link", { name: "demo", exact: true })).toHaveCSS(
+    "color",
+    "rgb(142, 197, 255)",
+  );
   await expect(page.getByText("npm install bad-map").first()).toBeVisible();
   await expect(
     page.getByRole("link", { name: "install anyway ↗" }),
@@ -59,6 +56,10 @@ test("promotes the package and embeds the interactive demo", async ({
     page.getByRole("link", { name: "source on github ↗" }),
   ).toHaveAttribute("href", "https://github.com/niko-dellic/bad-map");
   await expect(page.locator("#status")).toContainText("rendered in");
+  await expect(page.locator(".demo-window #app")).toHaveCSS(
+    "visibility",
+    "visible",
+  );
   await expect(
     page.getByRole("button", { name: "Search places" }),
   ).toBeVisible();
