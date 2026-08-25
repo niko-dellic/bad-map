@@ -70,6 +70,7 @@ const basemap = new LowResBasemap({
   camera: { rotation: true, pitch: true, maxPitch: 70 },
 });
 const fisheye = new ScreenFisheyeLayer();
+const app = document.querySelector<HTMLElement>("#app")!;
 const status = document.querySelector<HTMLSpanElement>("#status")!;
 const readout = document.querySelector<HTMLElement>("#readout")!;
 const featureQueryToggle = document.querySelector<HTMLButtonElement>(
@@ -91,12 +92,23 @@ const diagnostics = {
 
 setupPlaceSearch(map, basemap);
 
+let revealScheduled = false;
+const revealApp = () => {
+  if (revealScheduled) return;
+  revealScheduled = true;
+  requestAnimationFrame(() => {
+    app.style.removeProperty("visibility");
+    app.removeAttribute("aria-busy");
+  });
+};
+
 basemap.on("render", ({ durationMs, generation }) => {
   diagnostics.renderEvents += 1;
   diagnostics.lastGeneration = generation;
   diagnostics.lastDurationMs = durationMs;
   diagnostics.generations.push(generation);
   status.textContent = `rendered in ${durationMs.toFixed(0)} ms`;
+  revealApp();
 });
 basemap.on("stylechange", () => {
   diagnostics.styleEvents += 1;
@@ -150,6 +162,7 @@ try {
   map.addLayer(fisheye, basemap.layerIds.interaction);
 } catch (error) {
   status.textContent = error instanceof Error ? error.message : String(error);
+  revealApp();
   throw error;
 }
 
