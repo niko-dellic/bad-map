@@ -11,11 +11,11 @@ interactive. Greyscale is the default; full color remains one method call away.
 
 ### Animated trips
 
-[![Animated trips moving across a low-resolution map](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/animated.webp)](https://github.com/niko-dellic/bad-map/blob/main/docs/media/animated.mp4)
+[![Animated trips moving across a low-resolution map](./docs/media/animated.webp)](./docs/media/animated.mp4)
 
 ### Pixelated heatmap
 
-[![A pixelated heatmap rendered over a low-resolution map](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/heatmap.webp)](https://github.com/niko-dellic/bad-map/blob/main/docs/media/heatmap.mp4)
+[![A pixelated heatmap rendered over a low-resolution map](./docs/media/heatmap.webp)](./docs/media/heatmap.mp4)
 
 Select either preview to open the original MP4 recording.
 
