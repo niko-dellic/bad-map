@@ -21,6 +21,7 @@ import {
 } from "./highway-controls";
 import { setupSettingsPanel } from "./panel";
 import { setupPlaceSearch } from "./search";
+import { setupPresentationControls } from "./presentation-controls";
 import { setupTripsControls } from "./trips-controls";
 import { ScreenFisheyeLayer } from "./fisheye";
 import "./style.css";
@@ -78,6 +79,7 @@ const featureQueryToggle = document.querySelector<HTMLButtonElement>(
 )!;
 setupSettingsPanel();
 const effects = setupEffects(map, fisheye);
+const disconnectPresentationControls = setupPresentationControls(map);
 
 const diagnostics = {
   renderEvents: 0,
@@ -352,6 +354,7 @@ document.querySelector<HTMLButtonElement>("#reset")!.onclick = () => {
 };
 
 window.addEventListener("beforeunload", () => {
+  disconnectPresentationControls();
   disconnectTrips();
   effects.disconnect();
   basemap.remove();
