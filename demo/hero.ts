@@ -1,8 +1,11 @@
 import "@fontsource/silkscreen/400.css";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Map } from "maplibre-gl";
+import { Map, setWorkerUrl } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { LowResBasemap, streets, transit } from "../src";
 import { heroCameraAt, selectHeroCity } from "./hero-camera";
+
+setWorkerUrl(maplibreWorkerUrl);
 
 const container = document.querySelector<HTMLElement>("#hero-map");
 

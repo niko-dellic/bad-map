@@ -365,6 +365,68 @@ test("collapses the settings panel without hiding hover information", async ({
   await expect(settings.locator("section").first()).toBeVisible();
 });
 
+test("auto-rotates from the camera control and Shift+R", async ({ page }) => {
+  const toggle = page.locator("#auto-rotate");
+  const bearing = page.locator("#bearing");
+
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(toggle).toHaveAttribute("aria-keyshortcuts", "Shift+R");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(toggle).toHaveText("stop auto-rotate");
+  await expect
+    .poll(async () => Math.abs(Number(await bearing.inputValue())))
+    .toBeGreaterThan(0);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  const stoppedBearing = Number(await bearing.inputValue());
+  await page.waitForTimeout(200);
+  expect(Number(await bearing.inputValue())).toBeCloseTo(stoppedBearing, 5);
+
+  await page.keyboard.press("Shift+R");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Shift+R");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+});
+
+test("hides and restores every map UI overlay", async ({ page }) => {
+  const app = page.locator("#app");
+  const toggle = page.locator("#ui-visibility-toggle");
+  const credits = page.locator(".maplibregl-ctrl-attrib");
+
+  await page.locator("#feature-query-toggle").click();
+  await expect(page.locator("#readout")).toBeVisible();
+  await expect(credits).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-keyshortcuts", "Shift+H");
+
+  await toggle.click();
+  await expect(app).toHaveClass(/is-ui-hidden/);
+  await expect(page.locator("#top-bar")).toBeHidden();
+  await expect(page.locator("#readout")).toBeHidden();
+  await expect(page.locator("#settings")).toBeHidden();
+  await expect(credits).toBeHidden();
+
+  await page.keyboard.press("Shift+H");
+  await expect(app).not.toHaveClass(/is-ui-hidden/);
+  await expect(page.locator("#top-bar")).toBeVisible();
+  await expect(page.locator("#readout")).toBeVisible();
+  await expect(page.locator("#settings")).toBeVisible();
+  await expect(credits).toBeVisible();
+});
+
+test("toggles fullscreen with Shift+F", async ({ page }) => {
+  await page.keyboard.press("Shift+F");
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement?.id))
+    .toBe("app");
+
+  await page.keyboard.press("Shift+F");
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement))
+    .toBeNull();
+});
+
 test("organizes controls into tabs and names the next cell preset", async ({
   page,
 }) => {

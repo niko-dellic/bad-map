@@ -7,6 +7,18 @@ Coarse area fills, ranked square-dot lines, scalar data, and labels are composed
 independently, which leaves ordinary MapLibre and deck.gl layers crisp and
 interactive. Greyscale is the default; full color remains one method call away.
 
+## See it in motion
+
+### Animated trips
+
+[![Animated trips moving across a low-resolution map](./docs/media/animated.webp)](./docs/media/animated.mp4)
+
+### Pixelated heatmap
+
+[![A pixelated heatmap rendered over a low-resolution map](./docs/media/heatmap.webp)](./docs/media/heatmap.mp4)
+
+Select either preview to open the original MP4 recording.
+
 ## Install
 
 ```sh
@@ -21,6 +33,19 @@ install `maplibre-gl@^6` explicitly. The default keyless source is OpenFreeMap.
 requires the DOM, a canvas, WebGL 2, and Web Workers. In SSR frameworks, import
 and initialize it from a client-only component after the map container mounts.
 Server-rendering the map itself is intentionally out of scope.
+
+MapLibre GL JS 6 uses a separate ESM worker. Vite applications must configure
+its bundled URL once before creating a map:
+
+```ts
+import { setWorkerUrl } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+
+setWorkerUrl(maplibreWorkerUrl);
+```
+
+Other bundlers should follow MapLibre's
+[ESM worker setup](https://maplibre.org/maplibre-gl-js/docs/).
 
 ## Quick start
 

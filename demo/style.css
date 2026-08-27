@@ -35,6 +35,13 @@ body.demo-page,
   overflow: hidden;
 }
 
+#app.is-ui-hidden #top-bar,
+#app.is-ui-hidden #readout,
+#app.is-ui-hidden #settings,
+#app.is-ui-hidden .maplibregl-control-container {
+  display: none;
+}
+
 #screen-vignette {
   position: absolute;
   z-index: 1;
@@ -266,6 +273,12 @@ body.demo-page,
 }
 
 #feature-query-toggle[aria-pressed="true"] {
+  color: #f1f2f5;
+  border-color: #626875;
+  background: #252830;
+}
+
+#auto-rotate[aria-pressed="true"] {
   color: #f1f2f5;
   border-color: #626875;
   background: #252830;

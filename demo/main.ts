@@ -1,6 +1,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@phosphor-icons/web/regular";
-import { Map } from "maplibre-gl";
+import { Map, setWorkerUrl } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { Feature } from "geojson";
 import {
   landuse,
@@ -21,9 +22,12 @@ import {
 } from "./highway-controls";
 import { setupSettingsPanel } from "./panel";
 import { setupPlaceSearch } from "./search";
+import { setupPresentationControls } from "./presentation-controls";
 import { setupTripsControls } from "./trips-controls";
 import { ScreenFisheyeLayer } from "./fisheye";
 import "./style.css";
+
+setWorkerUrl(maplibreWorkerUrl);
 
 const map = new Map({
   container: "map",
@@ -78,6 +82,7 @@ const featureQueryToggle = document.querySelector<HTMLButtonElement>(
 )!;
 setupSettingsPanel();
 const effects = setupEffects(map, fisheye);
+const disconnectPresentationControls = setupPresentationControls(map);
 
 const diagnostics = {
   renderEvents: 0,
@@ -352,6 +357,7 @@ document.querySelector<HTMLButtonElement>("#reset")!.onclick = () => {
 };
 
 window.addEventListener("beforeunload", () => {
+  disconnectPresentationControls();
   disconnectTrips();
   effects.disconnect();
   basemap.remove();

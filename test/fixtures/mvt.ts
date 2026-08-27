@@ -200,7 +200,11 @@ export function semanticFixtureTile(): Uint8Array {
       features: [
         {
           type: 3,
-          properties: { class: "building" },
+          properties: {
+            class: "building",
+            render_height: 42,
+            render_min_height: 0,
+          },
           geometry: [
             [
               [1700, 2700],

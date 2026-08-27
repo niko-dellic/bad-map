@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { semanticFixtureTile } from "../test/fixtures/mvt";
 
 export { expect, test };
 
@@ -111,8 +112,38 @@ export async function diagnostics(page: import("@playwright/test").Page) {
   );
 }
 
-export function setupDemoTests(): void {
-  test.beforeEach(async ({ page }) => {
+export function setupDemoTests(options: { fixtureTiles?: boolean } = {}): void {
+  test.beforeEach(async ({ baseURL, page }) => {
+    if (options.fixtureTiles) {
+      const tileRoot = new URL("/e2e/tiles", baseURL).toString();
+      await page.route("https://tiles.openfreemap.org/planet", (route) =>
+        route.fulfill({
+          json: {
+            tilejson: "3.0.0",
+            tiles: [`${tileRoot}/{z}/{x}/{y}.pbf`],
+            minzoom: 0,
+            maxzoom: 14,
+            vector_layers: [
+              {
+                id: "building",
+                fields: {
+                  render_height: "Number",
+                  render_min_height: "Number",
+                },
+                minzoom: 0,
+                maxzoom: 14,
+              },
+            ],
+          },
+        }),
+      );
+      await page.route(`${tileRoot}/**`, (route) =>
+        route.fulfill({
+          body: Buffer.from(semanticFixtureTile()),
+          contentType: "application/vnd.mapbox-vector-tile",
+        }),
+      );
+    }
     await page.route(UBER_DATA_URL, (route) =>
       route.fulfill({ json: pickupFixture }),
     );

@@ -12,7 +12,7 @@ import {
   test,
 } from "./demo-fixture";
 
-setupDemoTests();
+setupDemoTests({ fixtureTiles: true });
 
 test("exposes stable slots and switches between bearing and surface cameras", async ({
   page,
@@ -229,6 +229,48 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
   expect(enabled.baseIndex).toBeLessThan(enabled.buildingIndex);
   expect(enabled.buildingIndex).toBeLessThan(enabled.dataIndex);
   expect(enabled.camera).toEqual(cameraBefore);
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { jumpTo(options: unknown): void };
+        };
+      }
+    ).__badMapDemo.map.jumpTo({ zoom: 16, pitch: 62, bearing: 24 });
+  });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const { map, basemap } = (
+            window as typeof window & {
+              __badMapDemo: {
+                map: {
+                  queryRenderedFeatures(
+                    geometry: undefined,
+                    options: { layers: string[] },
+                  ): unknown[];
+                  querySourceFeatures(
+                    sourceId: string,
+                    options: { sourceLayer: string },
+                  ): unknown[];
+                };
+                basemap: { layerIds: { buildings: string } };
+              };
+            }
+          ).__badMapDemo;
+          const source = map.querySourceFeatures("bad-map-buildings-source", {
+            sourceLayer: "building",
+          }).length;
+          const rendered = map.queryRenderedFeatures(undefined, {
+            layers: [basemap.layerIds.buildings],
+          }).length;
+          return Math.min(source, rendered);
+        }),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
 
   await page.locator("#tab-display").click();
   await page.locator("#projection").selectOption("screen");

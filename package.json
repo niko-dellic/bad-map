@@ -45,6 +45,7 @@
     "dev": "vite --host 127.0.0.1",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:compatibility": "playwright test --config playwright.compatibility.config.ts",
     "test:e2e:functional": "playwright test e2e/data.spec.ts e2e/camera.spec.ts e2e/ui.spec.ts e2e/lifecycle.spec.ts e2e/landing.spec.ts e2e/docs.spec.ts --grep-invert @performance",
     "test:e2e:performance": "playwright test e2e/lifecycle.spec.ts --grep @performance",
     "test:package": "npm run build && node scripts/test-package.mjs",
