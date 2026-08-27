@@ -1,6 +1,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@phosphor-icons/web/regular";
-import { Map } from "maplibre-gl";
+import { Map, setWorkerUrl } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { Feature } from "geojson";
 import {
   landuse,
@@ -25,6 +26,8 @@ import { setupPresentationControls } from "./presentation-controls";
 import { setupTripsControls } from "./trips-controls";
 import { ScreenFisheyeLayer } from "./fisheye";
 import "./style.css";
+
+setWorkerUrl(maplibreWorkerUrl);
 
 const map = new Map({
   container: "map",
