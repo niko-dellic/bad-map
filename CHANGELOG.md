@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.10.1
+
+### Added
+
+- Demo presentation controls for automatic rotation, fullscreen display, and
+  interface visibility, including keyboard shortcuts.
+- Deterministic browser coverage for packed-package consumers using both
+  MapLibre GL JS 5 and 6.
+
+### Changed
+
+- Updated the development toolchain to MapLibre GL JS 6.4, Vitest 4, Vite 8,
+  and the latest major GitHub checkout and Node setup actions.
+- Documented MapLibre GL JS 6 ESM worker setup and added animated trips and
+  pixelated heatmap previews to the README.
+- Improved demo startup so the landing interface appears only after the first
+  map render.
+
 ## 0.10.0
 
 ### Added
