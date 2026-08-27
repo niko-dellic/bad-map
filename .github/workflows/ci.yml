@@ -43,7 +43,11 @@ jobs:
       - run: npx playwright install --with-deps chromium chrome
       - run: npm run typecheck
       - run: npm test
-      - run: npm run test:e2e:functional
+      - run: npm run build
+      - if: matrix.maplibre == '5.24.0'
+        run: npm run test:e2e:compatibility
+      - if: matrix.maplibre == '6.4.1'
+        run: npm run test:e2e:functional
 
   node-20-compatibility:
     runs-on: ubuntu-latest
