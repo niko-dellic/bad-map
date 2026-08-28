@@ -41,6 +41,8 @@
     "clean": "node scripts/clean.mjs",
     "build": "npm run clean && vite build && node scripts/prune-dist.mjs && tsc -p tsconfig.build.json",
     "build:site": "vite build --config vite.site.config.ts",
+    "docs:capture-gallery": "playwright test --config playwright.gallery.config.ts",
+    "docs:check-gallery": "node scripts/check-readme-gallery.mjs",
     "api:check": "npm run build && node scripts/check-api.mjs",
     "dev": "vite --host 127.0.0.1",
     "test": "vitest run",
@@ -53,7 +55,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "format:check": "prettier --check .",
-    "verify": "npm run format:check && npm run typecheck && npm test && npm run build && node scripts/check-api.mjs && node scripts/test-package.mjs",
+    "verify": "npm run format:check && npm run typecheck && npm test && npm run docs:check-gallery && npm run build && node scripts/check-api.mjs && node scripts/test-package.mjs",
     "prepack": "npm run build",
     "prepublishOnly": "npm run verify"
   },

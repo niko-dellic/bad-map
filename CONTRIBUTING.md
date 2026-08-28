@@ -36,6 +36,21 @@ When a visual change is intentional, review the rendered image before running
 `npx playwright test e2e/visual.spec.ts --update-snapshots`; visual baselines are
 platform-specific.
 
+### README gallery
+
+The README feature gallery is generated from the live demo at a fixed
+1200 × 750 viewport. Regenerate and validate it with:
+
+```sh
+npm run docs:capture-gallery
+npm run docs:check-gallery
+```
+
+The capture command needs network access to OpenFreeMap and the public sample
+datasets. Review every resulting image before committing `docs/media/gallery`;
+the harness intentionally hides demo chrome and disables fog, vignette, and
+fisheye while retaining map-data attribution.
+
 ## Pull requests
 
 - Keep each pull request focused and explain its user-visible behavior.
