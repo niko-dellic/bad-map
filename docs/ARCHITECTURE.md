@@ -20,8 +20,11 @@ the root `bad-map` export.
 - `src/themes/` contains built-in themes and theme composition.
 - `src/workers/` contains worker entrypoints and transferable protocols.
 
-`src/index.ts` is the only package entrypoint. Internal moves must preserve its
-exports and pass the declaration fixture in `test/fixtures/public-api.d.ts`.
+`src/index.ts` is the only importable library API entrypoint. The executable
+`bad-map/workers/raster` and `bad-map/workers/data-raster` subpaths exist only
+so strict-CSP consumers can emit or self-host the package workers. Internal
+moves must preserve the root exports and pass the declaration fixture in
+`test/fixtures/public-api.d.ts`.
 
 ## Dependency direction
 
@@ -38,9 +41,10 @@ reusable behavior belongs under `src/`.
 Only symbols exported by `src/index.ts` are supported consumer API. Worker
 protocols, raster frames, semantic buffer enums, render providers, and source
 module paths are implementation details even when declaration generation emits
-their files. Public changes require an intentional declaration snapshot update
-and a changelog migration note. Before `1.0`, removals use a minor version bump;
-after `1.0`, semantic versioning governs compatibility.
+their files. The worker asset subpaths are executable build artifacts, not
+JavaScript APIs. Public changes require an intentional declaration snapshot
+update and a changelog migration note. Before `1.0`, removals use a minor
+version bump; after `1.0`, semantic versioning governs compatibility.
 
 `LowResBasemapLike` is intentionally public as the event-target interface.
 Theme composition helpers are also public so applications can derive colors
@@ -76,6 +80,13 @@ is not used as a hard gate on variable shared CI hardware.
 Browser suites are grouped by data overlays, camera/rendering, demo UI, and
 lifecycle/performance behavior. Shared page helpers belong in one support
 module rather than being copied between specs.
+
+The packed-consumer suite additionally verifies root imports during SSR,
+Bundler and NodeNext declarations, inline and same-origin workers, and strict
+CSP. Chromium owns full rendering and deferred data-worker assertions; Firefox
+and WebKit execute the packed module and both worker runtimes independently of
+headless WebGL availability. A map without visible package data layers must not
+start the data worker.
 
 ## Package boundaries
 

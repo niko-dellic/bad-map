@@ -144,6 +144,7 @@ export class LowResBasemap {
   #worker: Worker | undefined;
   #dataWorker: Worker | undefined;
   #workerFactory: () => Worker;
+  #dataWorkerFactory: () => Worker;
   #frame: RasterFrame | undefined;
   #detailFrame: RasterFrame | undefined;
   #dataFrame: DataRasterFrame | undefined;
@@ -218,8 +219,12 @@ export class LowResBasemap {
       renderThrottleMs: options.renderThrottleMs ?? 70,
     };
     this.#workerFactory =
+      options.workers?.raster ??
       options.workerFactory ??
       (() => new RasterWorker({ name: "bad-map-raster" }));
+    this.#dataWorkerFactory =
+      options.workers?.data ??
+      (() => new DataRasterWorker({ name: "bad-map-data-raster" }));
   }
 
   async addTo(map: MapLibreMap): Promise<this> {
@@ -241,17 +246,7 @@ export class LowResBasemap {
         fatal: false,
         cause: event.error,
       });
-    this.#dataWorker = new DataRasterWorker({ name: "bad-map-data-raster" });
-    this.#dataWorker.onmessage = (event: MessageEvent<DataWorkerResponse>) =>
-      this.#onDataWorkerMessage(event.data);
-    this.#dataWorker.onerror = (event) =>
-      this.#emitError({
-        code: "data",
-        message: event.message,
-        fatal: false,
-        cause: event.error,
-      });
-    this.#sendDataLayers();
+    this.#ensureDataWorkerForVisibleLayers();
     this.#post({
       type: "configure",
       sources: this.#sources,
@@ -499,6 +494,7 @@ export class LowResBasemap {
     validateHeatmap(next);
     this.#heatmap = next;
     this.#storeDataLayer(this.#defaultHeatmapLayer());
+    this.#ensureDataWorkerForVisibleLayers();
     this.#sendDataLayer(DEFAULT_HEATMAP_LAYER_ID);
     this.#requestDataRender();
     this.#emitHeatmapChange();
@@ -535,6 +531,7 @@ export class LowResBasemap {
     if (layer.id === DEFAULT_HEATMAP_LAYER_ID)
       throw new RangeError(`${DEFAULT_HEATMAP_LAYER_ID} is reserved`);
     this.#storeDataLayer(layer);
+    this.#ensureDataWorkerForVisibleLayers();
     this.#sendDataLayer(layer.id);
     this.#requestDataRender();
     this.#emitDataLayerChange(layer.id);
@@ -559,6 +556,7 @@ export class LowResBasemap {
     } as LowResDataLayer;
     const serialized = serializeDataLayer(source);
     this.#dataLayers.set(id, { source, serialized });
+    this.#ensureDataWorkerForVisibleLayers();
     const patchable = Object.keys(patch).every((key) =>
       ["visible", "opacity", "order", "pickable"].includes(key),
     );
@@ -650,6 +648,7 @@ export class LowResBasemap {
     if (serialized.type !== "trips")
       throw new TypeError(`Data layer ${id} is not a trips layer`);
     this.#dataLayers.set(id, { source, serialized });
+    this.#ensureDataWorkerForVisibleLayers();
     this.#postData({
       type: "playback",
       id,
@@ -1056,6 +1055,31 @@ export class LowResBasemap {
 
   #postData(message: DataWorkerRequest): void {
     this.#dataWorker?.postMessage(message);
+  }
+
+  #ensureDataWorkerForVisibleLayers(): void {
+    if (
+      ![...this.#dataLayers.values()].some(
+        ({ serialized }) => serialized.visible,
+      )
+    )
+      return;
+    this.#ensureDataWorker();
+  }
+
+  #ensureDataWorker(): void {
+    if (this.#dataWorker || !this.#map) return;
+    this.#dataWorker = this.#dataWorkerFactory();
+    this.#dataWorker.onmessage = (event: MessageEvent<DataWorkerResponse>) =>
+      this.#onDataWorkerMessage(event.data);
+    this.#dataWorker.onerror = (event) =>
+      this.#emitError({
+        code: "data",
+        message: event.message,
+        fatal: false,
+        cause: event.error,
+      });
+    this.#sendDataLayers();
   }
 
   #heatmapPalette(): readonly [RGB, RGB, RGB, RGB] {

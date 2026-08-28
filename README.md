@@ -54,10 +54,10 @@ MapLibre GL JS is a required peer dependency and is installed automatically by
 npm 7 and newer. Package managers that do not install peer dependencies should
 install `maplibre-gl@^6` explicitly. The default keyless source is OpenFreeMap.
 
-`bad-map` is a browser library, not a server-side map renderer. Creating a map
-requires the DOM, a canvas, WebGL 2, and Web Workers. In SSR frameworks, import
-and initialize it from a client-only component after the map container mounts.
-Server-rendering the map itself is intentionally out of scope.
+`bad-map` is safe to import during server rendering, but it is a browser
+renderer rather than a server-side map renderer. Construct the MapLibre map and
+call `addTo()` from client-side code after the map container mounts; those
+operations require the DOM, a canvas, WebGL 2, and Web Workers.
 
 MapLibre GL JS 6 uses a separate ESM worker. Vite applications must configure
 its bundled URL once before creating a map:
@@ -134,7 +134,68 @@ basemap.setLayerVisible("transit", true);
 | `enforceNorthUp`         | `false`                                    | Disable host-map rotation and pitch while attached |
 | `maxCachedTiles`         | `96`                                       | Shared fallback tile-cache budget                  |
 | `renderThrottleMs`       | `70`                                       | Worker refresh cadence during movement             |
-| `workerFactory`          | Bundled semantic worker                    | Advanced replacement semantic worker hook          |
+| `workers`                | Bundled workers                            | Raster and data worker factory overrides           |
+| `workerFactory`          | Bundled semantic worker                    | Deprecated alias for `workers.raster`              |
+
+## Workers and content security policy
+
+The default distribution embeds the semantic worker in the main bundle and
+creates the data worker only when a visible package data layer needs it. This
+zero-asset setup requires `blob:` in `worker-src`:
+
+```text
+worker-src 'self' blob:;
+connect-src 'self' https://tiles.openfreemap.org;
+img-src 'self' data: blob:;
+```
+
+Applications with a strict `worker-src 'self'` policy can use the package's
+self-contained worker entry points instead. Vite emits them as same-origin
+assets with `?url`:
+
+```ts
+import rasterWorkerUrl from "bad-map/workers/raster?url";
+import dataRasterWorkerUrl from "bad-map/workers/data-raster?url";
+
+const basemap = new LowResBasemap({
+  workers: {
+    raster: () =>
+      new Worker(rasterWorkerUrl, {
+        type: "module",
+        name: "bad-map-raster",
+      }),
+    data: () =>
+      new Worker(dataRasterWorkerUrl, {
+        type: "module",
+        name: "bad-map-data-raster",
+      }),
+  },
+});
+```
+
+For other bundlers, emit or copy the `bad-map/workers/raster` and
+`bad-map/workers/data-raster` package exports to same-origin URLs, then return
+module workers for those URLs from the two factories. MapLibre's own worker is
+configured separately using its documented setup.
+
+## Network behavior
+
+Calling `addTo()` fetches the configured TileJSON and visible MVT tiles. With no
+source option, requests go to `https://tiles.openfreemap.org/planet`; the
+package itself contains no analytics. [OpenFreeMap's public
+service](https://openfreemap.org/) is keyless and permits commercial use, but
+does not provide an SLA. Production hosts can replace it with any compatible
+OpenMapTiles source or a self-hosted endpoint. Keep attribution enabled, or
+provide equivalent visible attribution yourself.
+
+## Browser support
+
+The supported baseline is an evergreen browser with WebGL 2, module workers,
+and Web Mercator support. Chromium runs the full packed-package rendering,
+deferred data-worker, and strict-CSP checks. Firefox and WebKit execute the
+packed module and both worker runtimes without relying on headless WebGL.
+Rendering remains client-only even though importing the package during SSR is
+supported.
 
 ## Layer ordering
 
@@ -517,10 +578,12 @@ the host application.
 
 - **Blank or zero-sized map:** give the map container an explicit width and
   height before constructing MapLibre.
-- **Server-rendering errors:** import and initialize both MapLibre and
-  `bad-map` in a client-only component after mount.
-- **Worker or CSP failures:** allow workers created from the application bundle
-  and include the corresponding `worker-src` policy.
+- **Server-rendering errors:** defer MapLibre map construction and `addTo()`
+  until after the client-side map container mounts. Importing `bad-map` alone
+  does not require browser globals.
+- **Worker or CSP failures:** allow `blob:` workers for the default setup, or
+  configure both same-origin worker factories as shown above. MapLibre's own
+  worker policy is separate.
 - **TileJSON or tile failures:** confirm browser CORS access and place
   serializable authorization values in `LowResSource.request`.
 - **Unsupported rendering:** `bad-map` requires WebGL 2 and Web Mercator; it
@@ -534,6 +597,7 @@ the expected extension path for new data-layer types.
 
 ```sh
 npm ci
+npx playwright install chromium chrome firefox webkit
 npm run verify
 npm run test:e2e:functional
 npm run test:e2e

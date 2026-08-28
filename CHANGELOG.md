@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.11.0
+
+### Added
+
+- Same-origin semantic and data worker package exports plus additive worker
+  factory overrides for applications with strict content security policies.
+- Packed-artifact smoke coverage for Node imports, strict CSP, Firefox, and
+  WebKit in addition to Chromium.
+
+### Changed
+
+- Deferred data-worker construction until a visible package data layer needs
+  it.
+- Clarified that package imports are SSR-safe while map construction remains
+  client-only, and documented default network, browser, and CSP behavior.
+
 ## 0.10.2
 
 ### Added

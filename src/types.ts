@@ -301,6 +301,13 @@ export interface LowResTheme {
 export type BuiltinThemeName = "dark" | "light";
 export type LowResColorMode = "color" | "greyscale";
 
+export interface LowResWorkerFactories {
+  /** Creates the semantic tile raster worker. */
+  raster?: () => Worker;
+  /** Creates the package data-layer raster worker. */
+  data?: () => Worker;
+}
+
 export interface LowResBasemapOptions {
   source?: LowResSource;
   /** Named sources. The singular source option remains shorthand for base. */
@@ -330,7 +337,9 @@ export interface LowResBasemapOptions {
   enforceNorthUp?: boolean;
   maxCachedTiles?: number;
   renderThrottleMs?: number;
-  /** Advanced hook for bundling additional worker-side adapters. */
+  /** Worker overrides, including same-origin workers for strict CSP hosts. */
+  workers?: LowResWorkerFactories;
+  /** @deprecated Use workers.raster instead. */
   workerFactory?: () => Worker;
 }
 
