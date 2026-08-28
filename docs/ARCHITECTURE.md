@@ -82,9 +82,11 @@ lifecycle/performance behavior. Shared page helpers belong in one support
 module rather than being copied between specs.
 
 The packed-consumer suite additionally verifies root imports during SSR,
-Bundler and NodeNext declarations, inline and same-origin workers, strict CSP,
-and rendering in Chromium, Firefox, and WebKit. A map without visible package
-data layers must not start the data worker.
+Bundler and NodeNext declarations, inline and same-origin workers, and strict
+CSP. Chromium owns full rendering and deferred data-worker assertions; Firefox
+and WebKit execute the packed module and both worker runtimes independently of
+headless WebGL availability. A map without visible package data layers must not
+start the data worker.
 
 ## Package boundaries
 

@@ -191,6 +191,10 @@ new LowResBasemap({ layers: [streets()], dataLayers: [layer], workers });
 <script type="module" src="/main-strict.js"></script>`,
   );
   writeFileSync(
+    join(applicationRoot, "worker-smoke.html"),
+    `<script type="module" src="/worker-smoke.js"></script>`,
+  );
+  writeFileSync(
     join(applicationRoot, "main.js"),
     `import { Map } from "maplibre-gl";
 import { LowResBasemap } from "bad-map";
@@ -219,6 +223,54 @@ basemap.setDataLayer({
   id: "package-point",
   type: "waypoint",
   data: [{ position: [0, 0] }],
+});
+`,
+  );
+  writeFileSync(
+    join(applicationRoot, "worker-smoke.js"),
+    `import { LowResBasemap } from "bad-map";
+import rasterWorkerUrl from "bad-map/workers/raster?url";
+import dataRasterWorkerUrl from "bad-map/workers/data-raster?url";
+
+window.__workerSmoke = {
+  imported: typeof LowResBasemap === "function",
+  ready: 0,
+  errors: [],
+};
+
+const startWorker = async (url, name, message) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(\`Could not fetch \${name}: \${response.status}\`);
+  const source = await response.text();
+  const blobUrl = URL.createObjectURL(
+    new Blob([source], { type: "text/javascript" }),
+  );
+  const worker = new Worker(blobUrl, { type: "module", name });
+  worker.onmessage = ({ data }) => {
+    if (data?.type !== "ready") return;
+    window.__workerSmoke.ready += 1;
+    worker.terminate();
+    URL.revokeObjectURL(blobUrl);
+  };
+  worker.onerror = (event) => {
+    window.__workerSmoke.errors.push(event.message || \`\${name} failed\`);
+  };
+  worker.postMessage(message);
+};
+
+Promise.all([
+  startWorker(rasterWorkerUrl, "bad-map-raster", {
+    type: "configure",
+    sources: {},
+    layers: [],
+    maxCachedTiles: 1,
+  }),
+  startWorker(dataRasterWorkerUrl, "bad-map-data-raster", {
+    type: "set-layers",
+    layers: [],
+  }),
+]).catch((error) => {
+  window.__workerSmoke.errors.push(String(error));
 });
 `,
   );
@@ -416,13 +468,79 @@ basemap.setDataLayer({
     browser = undefined;
   };
 
+  const checkWorkerRuntime = async (browserType, name) => {
+    browser = await browserType.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.addInitScript(() => {
+      window.__workerConstructions = [];
+      window.Worker = new Proxy(window.Worker, {
+        construct(Target, args) {
+          const [url, options] = args;
+          window.__workerConstructions.push({
+            url: String(url),
+            name: options?.name ?? "",
+          });
+          return Reflect.construct(Target, args);
+        },
+      });
+    });
+    const failedRequests = [];
+    const pageErrors = [];
+    page.on("requestfailed", (request) =>
+      failedRequests.push(
+        `${request.url()}: ${request.failure()?.errorText ?? "failed"}`,
+      ),
+    );
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.goto(`http://127.0.0.1:${address.port}/worker-smoke.html`);
+    try {
+      await page.waitForFunction(
+        () =>
+          window.__workerSmoke?.imported === true &&
+          window.__workerSmoke?.ready === 2,
+        null,
+        { timeout: 15_000 },
+      );
+    } catch (cause) {
+      const state = await page.evaluate(() => window.__workerSmoke);
+      throw new Error(
+        `${name} worker runtimes did not initialize: ${JSON.stringify({ state, failedRequests, pageErrors })}`,
+        { cause },
+      );
+    }
+    const state = await page.evaluate(() => window.__workerSmoke);
+    const packageWorkers = (
+      await page.evaluate(() => window.__workerConstructions)
+    ).filter(({ name: workerName }) => workerName.startsWith("bad-map-"));
+    const workerNames = packageWorkers
+      .map(({ name: workerName }) => workerName)
+      .sort();
+    if (state.errors.length || failedRequests.length || pageErrors.length)
+      throw new Error(
+        `${name} worker smoke emitted errors: ${JSON.stringify({ state, failedRequests, pageErrors })}`,
+      );
+    if (
+      packageWorkers.length !== 2 ||
+      packageWorkers.some(({ url }) => !url.startsWith("blob:")) ||
+      workerNames.join(",") !== "bad-map-data-raster,bad-map-raster"
+    )
+      throw new Error(
+        `Expected both packed worker runtimes in ${name}: ${JSON.stringify(packageWorkers)}`,
+      );
+    await browser.close();
+    browser = undefined;
+  };
+
   await checkConsumer(chromium, "Chromium");
-  await checkConsumer(firefox, "Firefox");
-  await checkConsumer(webkit, "WebKit");
+  // Headless Firefox and WebKit runners may not expose WebGL 2. Their package
+  // checks exercise imports and both real worker runtimes independently of GPU
+  // availability; Chromium owns the full rendering assertions above.
+  await checkWorkerRuntime(firefox, "Firefox");
+  await checkWorkerRuntime(webkit, "WebKit");
   await checkConsumer(chromium, "strict-CSP Chromium", true);
 
   console.log(
-    "Packed npm artifact passed contents, SSR import, types, CSP, cross-browser worker, and render checks.",
+    "Packed npm artifact passed contents, SSR import, types, CSP, Chromium rendering, and cross-browser worker-runtime checks.",
   );
 } finally {
   await browser?.close();

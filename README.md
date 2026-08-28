@@ -191,10 +191,11 @@ provide equivalent visible attribution yourself.
 ## Browser support
 
 The supported baseline is an evergreen browser with WebGL 2, module workers,
-and Web Mercator support. The packed npm artifact is smoke-tested in Chromium,
-Firefox, and WebKit, including deferred data-worker startup. Chromium also runs
-the same-origin worker configuration under a strict CSP. Rendering remains
-client-only even though importing the package during SSR is supported.
+and Web Mercator support. Chromium runs the full packed-package rendering,
+deferred data-worker, and strict-CSP checks. Firefox and WebKit execute the
+packed module and both worker runtimes without relying on headless WebGL.
+Rendering remains client-only even though importing the package during SSR is
+supported.
 
 ## Layer ordering
 
