@@ -5,7 +5,34 @@ A semantic low-resolution cartography toolkit for MapLibre GL JS.
 `bad-map` renders vector-tile meaning instead of pixelating an existing map.
 Coarse area fills, ranked square-dot lines, scalar data, and labels are composed
 independently, which leaves ordinary MapLibre and deck.gl layers crisp and
-interactive. Greyscale is the default; full color remains one method call away.
+interactive. Greyscale is the default; full color remains.
+
+## Gallery
+
+Every view below uses the semantic low-resolution renderer without fog,
+fisheye, or vignette effects. Data visualizations retain their own colors when
+the cartography is greyscale.
+
+### Theme and color modes
+
+| Dark theme                                                                                                                                                                                                        | Light theme                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![Lower Manhattan in the dark greyscale theme](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/theme-dark-greyscale.png)<br>**Dark · greyscale** — streets and labels               | ![Lower Manhattan in the light greyscale theme](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/theme-light-greyscale.png)<br>**Light · greyscale** — the same camera and detail |
+| ![Lower Manhattan in the dark full-color theme](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/theme-dark-color.png)<br>**Dark · full color** — semantic fills and ranked linework | ![Lower Manhattan in the light full-color theme](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/theme-light-color.png)<br>**Light · full color** — the same camera and detail   |
+
+### Cartography and camera
+
+| Regional and coastal detail                                                                                                                                                                                                         | Dense urban detail                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![Political boundaries across the continental United States](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/regional-political.png)<br>**Regional political boundaries** — low-zoom continental view | ![Transit lines across Midtown Manhattan](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/urban-transit.png)<br>**Urban transit** — high-zoom streets, transit, and labels |
+| ![Marine and land-use features around New York Harbor](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/coastal-semantic-packs.png)<br>**Marine and land use** — 12 × 24 configurable cells            | ![Extruded buildings over Lower Manhattan](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/buildings-3d.png)<br>**3D buildings** — pitched surface projection              |
+
+### Data layers
+
+| Scalar and animated data                                                                                                                                                                                           | General GeoJSON                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![Pixelated pickup-density heatmap over New York City](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/data-heatmap.png)<br>**Heatmap** — colored density over greyscale cartography | ![Pixelated highway safety paths across the United States](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/data-highways.png)<br>**Highway safety** — data-driven path color and width                                                         |
+| ![Pixelated animated trip trails over New York City](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/data-trips.png)<br>**Trips** — a deterministic frame from animated trails       | ![Pixelated points, paths, polygon, and waypoint symbols over Manhattan](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/data-geometry-waypoints.png)<br>**Geometry and waypoints** — points, paths, polygon holes, locator, and caret symbols |
 
 ## See it in motion
 
@@ -16,8 +43,6 @@ interactive. Greyscale is the default; full color remains one method call away.
 ### Pixelated heatmap
 
 [![A pixelated heatmap rendered over a low-resolution map](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/heatmap.webp)](https://github.com/niko-dellic/bad-map/blob/main/docs/media/heatmap.mp4)
-
-Select either preview to open the original MP4 recording.
 
 ## Install
 

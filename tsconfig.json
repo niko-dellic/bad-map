@@ -23,6 +23,7 @@
     "vite.site.config.ts",
     "vitest.config.ts",
     "playwright.config.ts",
+    "playwright.gallery.config.ts",
     "playwright.compatibility.config.ts"
   ]
 }

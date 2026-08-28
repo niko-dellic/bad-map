@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.10.2
+
+### Added
+
+- A twelve-image README gallery covering dark and light themes, greyscale and
+  full-color rendering, semantic packs, multiple zoom levels, 3D buildings,
+  heatmaps, trips, highway paths, GeoJSON geometry, and waypoint glyphs.
+- A reproducible Playwright gallery capture command and validation check for
+  image dimensions, README references, and asset size budgets.
+
+### Changed
+
+- Documented the gallery maintenance workflow while keeping generated media
+  outside the published npm tarball.
+
 ## 0.10.1
 
 ### Added
