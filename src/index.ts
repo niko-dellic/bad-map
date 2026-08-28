@@ -55,5 +55,6 @@ export type {
   LowResWaypoint,
   LowResWaypointDataLayer,
   LowResWaypointStyle,
+  LowResWorkerFactories,
   RGB,
 } from "./types.js";

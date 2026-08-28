@@ -1,6 +1,6 @@
 {
   "name": "bad-map",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "description": "A semantic low-resolution Braille basemap for MapLibre GL JS",
   "author": "niko-dellic",
   "packageManager": "npm@11.6.2",
@@ -23,7 +23,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/bad-map.js",
       "default": "./dist/bad-map.js"
-    }
+    },
+    "./workers/raster": "./dist/workers/raster.js",
+    "./workers/data-raster": "./dist/workers/data-raster.js"
   },
   "repository": {
     "type": "git",
@@ -39,7 +41,7 @@
   },
   "scripts": {
     "clean": "node scripts/clean.mjs",
-    "build": "npm run clean && vite build && node scripts/prune-dist.mjs && tsc -p tsconfig.build.json",
+    "build": "npm run clean && vite build && node scripts/prune-dist.mjs && node scripts/build-workers.mjs && tsc -p tsconfig.build.json",
     "build:site": "vite build --config vite.site.config.ts",
     "docs:capture-gallery": "playwright test --config playwright.gallery.config.ts",
     "docs:check-gallery": "node scripts/check-readme-gallery.mjs",

@@ -20,7 +20,7 @@ revoke any remaining token-based publishing access.
 
    ```sh
    npm ci
-   npx playwright install chromium chrome
+   npx playwright install chromium chrome firefox webkit
    npm run verify
    npm run test:e2e:functional
    npm pack --dry-run

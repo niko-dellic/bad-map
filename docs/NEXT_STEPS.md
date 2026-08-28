@@ -61,8 +61,9 @@ The built-in registry currently includes:
 - `landuse`: land-use, land-cover, park, and building subsets.
 
 Factories return plain serializable objects. Applications needing a different
-schema can provide a bundled worker through `workerFactory`; executable adapters
-do not run on the main thread or cross `postMessage` as functions.
+schema can provide a bundled semantic worker through `workers.raster`;
+executable adapters do not run on the main thread or cross `postMessage` as
+functions.
 
 ### Visualization stack
 

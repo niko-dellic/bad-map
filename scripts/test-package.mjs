@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import {
   mkdtempSync,
   mkdirSync,
+  realpathSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -10,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { chromium } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
 import { createServer } from "vite";
 
 const repository = process.cwd();
@@ -105,6 +106,17 @@ try {
         throw error;
     }
   readFileSync(join(installedPackage, "THIRD_PARTY_NOTICES.md"));
+  for (const worker of ["raster", "data-raster"])
+    readFileSync(join(installedPackage, "dist", "workers", `${worker}.js`));
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      'await import("bad-map"); console.log("SSR import passed");',
+    ],
+    applicationRoot,
+  );
   const declarationFiles = (directory) =>
     readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const path = join(directory, entry.name);
@@ -125,7 +137,7 @@ try {
 
   writeFileSync(
     join(applicationRoot, "consumer.ts"),
-    `import { LowResBasemap, streets, type LowResDataLayer } from "bad-map";
+    `import { LowResBasemap, streets, type LowResDataLayer, type LowResWorkerFactories } from "bad-map";
 
 const layer: LowResDataLayer = {
   id: "point",
@@ -133,7 +145,12 @@ const layer: LowResDataLayer = {
   data: [{ position: [0, 0], style: "caret" }],
 };
 
-new LowResBasemap({ layers: [streets()], dataLayers: [layer] });
+const workers: LowResWorkerFactories = {
+  raster: () => new Worker("/raster.js", { type: "module" }),
+  data: () => new Worker("/data-raster.js", { type: "module" }),
+};
+
+new LowResBasemap({ layers: [streets()], dataLayers: [layer], workers });
 `,
   );
   const tsc = resolve(repository, "node_modules/typescript/bin/tsc");
@@ -166,20 +183,12 @@ new LowResBasemap({ layers: [streets()], dataLayers: [layer] });
   writeFileSync(
     join(applicationRoot, "index.html"),
     `<main id="map"></main>
-<script>
-  window.__workerConstructions = [];
-  window.Worker = new Proxy(window.Worker, {
-    construct(Target, args) {
-      const [url, options] = args;
-      window.__workerConstructions.push({
-        url: String(url),
-        name: options?.name ?? "",
-      });
-      return Reflect.construct(Target, args);
-    },
-  });
-</script>
 <script type="module" src="/main.js"></script>`,
+  );
+  writeFileSync(
+    join(applicationRoot, "strict.html"),
+    `<main id="map"></main>
+<script type="module" src="/main-strict.js"></script>`,
   );
   writeFileSync(
     join(applicationRoot, "main.js"),
@@ -198,10 +207,65 @@ const basemap = new LowResBasemap({
   attribution: false,
   labels: false,
 });
-window.__packageSmoke = { ready: false, errors: [] };
+window.__packageSmoke = { ready: false, dataReady: false, errors: [] };
 basemap.on("error", ({ error }) => window.__packageSmoke.errors.push(error));
 basemap.on("render", () => { window.__packageSmoke.ready = true; });
+basemap.on("datarender", () => { window.__packageSmoke.dataReady = true; });
 await basemap.addTo(map);
+window.__packageSmoke.workersBeforeData = window.__workerConstructions.filter(
+  ({ name }) => name.startsWith("bad-map-"),
+).length;
+basemap.setDataLayer({
+  id: "package-point",
+  type: "waypoint",
+  data: [{ position: [0, 0] }],
+});
+`,
+  );
+  writeFileSync(
+    join(applicationRoot, "main-strict.js"),
+    `import { Map } from "maplibre-gl";
+import { LowResBasemap } from "bad-map";
+import rasterWorkerUrl from "bad-map/workers/raster?url";
+import dataRasterWorkerUrl from "bad-map/workers/data-raster?url";
+
+const map = new Map({
+  container: "map",
+  center: [0, 0],
+  zoom: 0,
+  style: { version: 8, sources: {}, layers: [] },
+  attributionControl: false,
+});
+const basemap = new LowResBasemap({
+  source: { tileJSON: new URL("/tilejson.json", location.href).href },
+  attribution: false,
+  labels: false,
+  workers: {
+    raster: () =>
+      new Worker(rasterWorkerUrl, {
+        type: "module",
+        name: "bad-map-raster",
+      }),
+    data: () =>
+      new Worker(dataRasterWorkerUrl, {
+        type: "module",
+        name: "bad-map-data-raster",
+      }),
+  },
+});
+window.__packageSmoke = { ready: false, dataReady: false, errors: [] };
+basemap.on("error", ({ error }) => window.__packageSmoke.errors.push(error));
+basemap.on("render", () => { window.__packageSmoke.ready = true; });
+basemap.on("datarender", () => { window.__packageSmoke.dataReady = true; });
+await basemap.addTo(map);
+window.__packageSmoke.workersBeforeData = window.__workerConstructions.filter(
+  ({ name }) => name.startsWith("bad-map-"),
+).length;
+basemap.setDataLayer({
+  id: "package-point",
+  type: "waypoint",
+  data: [{ position: [0, 0] }],
+});
 `,
   );
 
@@ -215,13 +279,25 @@ await basemap.addTo(map);
     server: {
       host: "127.0.0.1",
       port: 0,
-      fs: { allow: [applicationRoot, repository] },
+      fs: {
+        allow: [
+          applicationRoot,
+          realpathSync(applicationRoot),
+          repository,
+          realpathSync(repository),
+        ],
+      },
     },
     plugins: [
       {
         name: "bad-map-package-fixtures",
         configureServer(viteServer) {
           viteServer.middlewares.use((request, response, next) => {
+            if (request.url === "/strict.html")
+              response.setHeader(
+                "content-security-policy",
+                "default-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'",
+              );
             if (request.url === "/tilejson.json") {
               response.setHeader("content-type", "application/json");
               response.end(
@@ -252,58 +328,101 @@ await basemap.addTo(map);
   if (!address || typeof address === "string")
     throw new Error("Could not resolve consumer test server address");
 
-  browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
-  const failedRequests = [];
-  const pageErrors = [];
-  const consoleErrors = [];
-  page.on("requestfailed", (request) =>
-    failedRequests.push(
-      `${request.url()}: ${request.failure()?.errorText ?? "failed"}`,
-    ),
-  );
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
-  });
-  await page.goto(`http://127.0.0.1:${address.port}`);
-  try {
-    await page.waitForFunction(
-      () => window.__packageSmoke?.ready === true,
-      null,
-      {
-        timeout: 15_000,
-      },
+  const checkConsumer = async (browserType, name, strict = false) => {
+    browser = await browserType.launch({ headless: true });
+    const page = await browser.newPage({
+      viewport: { width: 640, height: 480 },
+    });
+    await page.addInitScript(() => {
+      window.__workerConstructions = [];
+      window.Worker = new Proxy(window.Worker, {
+        construct(Target, args) {
+          const [url, options] = args;
+          window.__workerConstructions.push({
+            url: String(url),
+            name: options?.name ?? "",
+          });
+          return Reflect.construct(Target, args);
+        },
+      });
+    });
+    const failedRequests = [];
+    const pageErrors = [];
+    const consoleErrors = [];
+    page.on("requestfailed", (request) =>
+      failedRequests.push(
+        `${request.url()}: ${request.failure()?.errorText ?? "failed"}`,
+      ),
     );
-  } catch (cause) {
-    throw new Error(
-      `Consumer did not render: ${JSON.stringify({ consoleErrors, failedRequests, pageErrors })}`,
-      { cause },
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    await page.goto(
+      `http://127.0.0.1:${address.port}/${strict ? "strict.html" : ""}`,
     );
-  }
-  const errors = await page.evaluate(() => window.__packageSmoke.errors);
-  const workers = await page.evaluate(() => window.__workerConstructions);
-  if (errors.some((error) => error.fatal))
-    throw new Error(
-      `Consumer emitted a fatal error: ${JSON.stringify(errors)}`,
+    try {
+      await page.waitForFunction(
+        () =>
+          window.__packageSmoke?.ready === true &&
+          window.__packageSmoke?.dataReady === true,
+        null,
+        { timeout: 15_000 },
+      );
+    } catch (cause) {
+      throw new Error(
+        `${name} consumer did not render: ${JSON.stringify({ consoleErrors, failedRequests, pageErrors })}`,
+        { cause },
+      );
+    }
+    const errors = await page.evaluate(() => window.__packageSmoke.errors);
+    const workersBeforeData = await page.evaluate(
+      () => window.__packageSmoke.workersBeforeData,
     );
-  if (failedRequests.length)
-    throw new Error(`Consumer request failure: ${failedRequests.join("\n")}`);
-  const packageWorkers = workers.filter(({ name }) =>
-    name.startsWith("bad-map-"),
-  );
-  const workerNames = packageWorkers.map(({ name }) => name).sort();
-  if (
-    packageWorkers.length !== 2 ||
-    packageWorkers.some(({ url }) => !url.startsWith("blob:")) ||
-    workerNames.join(",") !== "bad-map-data-raster,bad-map-raster"
-  )
-    throw new Error(
-      `Expected two embedded package workers: ${JSON.stringify(packageWorkers)}`,
+    const workers = await page.evaluate(() => window.__workerConstructions);
+    if (errors.some((error) => error.fatal))
+      throw new Error(
+        `${name} consumer emitted a fatal error: ${JSON.stringify(errors)}`,
+      );
+    if (failedRequests.length)
+      throw new Error(
+        `${name} consumer request failure: ${failedRequests.join("\n")}`,
+      );
+    if (workersBeforeData !== 1)
+      throw new Error(
+        `${name} started ${workersBeforeData} package workers before adding data; expected one`,
+      );
+    const packageWorkers = workers.filter(({ name: workerName }) =>
+      workerName.startsWith("bad-map-"),
     );
+    const workerNames = packageWorkers
+      .map(({ name: workerName }) => workerName)
+      .sort();
+    const workerUrlAllowed = ({ url }) =>
+      strict
+        ? !url.startsWith("blob:") &&
+          new URL(url, `http://127.0.0.1:${address.port}`).origin ===
+            `http://127.0.0.1:${address.port}`
+        : url.startsWith("blob:");
+    if (
+      packageWorkers.length !== 2 ||
+      packageWorkers.some((worker) => !workerUrlAllowed(worker)) ||
+      workerNames.join(",") !== "bad-map-data-raster,bad-map-raster"
+    )
+      throw new Error(
+        `Expected two ${strict ? "external" : "embedded"} package workers in ${name}: ${JSON.stringify(packageWorkers)}`,
+      );
+    await browser.close();
+    browser = undefined;
+  };
+
+  await checkConsumer(chromium, "Chromium");
+  await checkConsumer(firefox, "Firefox");
+  await checkConsumer(webkit, "WebKit");
+  await checkConsumer(chromium, "strict-CSP Chromium", true);
 
   console.log(
-    "Packed npm artifact passed contents, type, worker, and render checks.",
+    "Packed npm artifact passed contents, SSR import, types, CSP, cross-browser worker, and render checks.",
   );
 } finally {
   await browser?.close();
