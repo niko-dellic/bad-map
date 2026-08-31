@@ -65,6 +65,9 @@ const packDescriptors = [
   marine({ enabled: false, priority: 12 }),
   landuse({ enabled: false, priority: 8 }),
 ];
+const buildingsStyle = new URLSearchParams(location.search).get(
+  "building-style",
+);
 const basemap = new LowResBasemap({
   source: BASE_SOURCE,
   layers: packDescriptors,
@@ -72,6 +75,9 @@ const basemap = new LowResBasemap({
   labels: false,
   featureInteraction: false,
   camera: { rotation: true, pitch: true, maxPitch: 70 },
+  ...(buildingsStyle === "native"
+    ? { buildings3D: { style: "native" as const } }
+    : {}),
 });
 const fisheye = new ScreenFisheyeLayer();
 const app = document.querySelector<HTMLElement>("#app")!;
@@ -228,6 +234,20 @@ const fogThemeColor =
   document.querySelector<HTMLInputElement>("#fog-theme-color")!;
 const fogStatus = document.querySelector<HTMLOutputElement>("#fog-status")!;
 const buildings3D = document.querySelector<HTMLInputElement>("#buildings-3d")!;
+const buildingFill =
+  document.querySelector<HTMLInputElement>("#building-fill")!;
+const buildingDots =
+  document.querySelector<HTMLInputElement>("#building-dots")!;
+const buildingEdges =
+  document.querySelector<HTMLInputElement>("#building-edges")!;
+const buildingEdgeStrength = document.querySelector<HTMLInputElement>(
+  "#building-edge-strength",
+)!;
+const buildingHeight =
+  document.querySelector<HTMLInputElement>("#building-height")!;
+const buildingStyleStatus = document.querySelector<HTMLOutputElement>(
+  "#building-style-status",
+)!;
 const bearing = document.querySelector<HTMLInputElement>("#bearing")!;
 const pitch = document.querySelector<HTMLInputElement>("#pitch")!;
 let themeFogColor: RGB = [15, 15, 15];
@@ -311,6 +331,32 @@ projection.onchange = applyProjection;
 buildings3D.onchange = () => {
   basemap.setBuildings3DVisible(buildings3D.checked);
 };
+const applyBuildingAppearance = () => {
+  basemap.setBuildings3DAppearance({
+    fill: buildingFill.checked,
+    dots: buildingDots.checked,
+    edges: buildingEdges.checked,
+    edgeStrength: Number(buildingEdgeStrength.value),
+    heightScale: Number(buildingHeight.value),
+  });
+  document.querySelector("#building-edge-strength-value")!.textContent =
+    `${Number(buildingEdgeStrength.value).toFixed(2)}×`;
+  document.querySelector("#building-height-value")!.textContent =
+    `${Number(buildingHeight.value).toFixed(2)}×`;
+  const layers = [
+    buildingFill.checked ? "three-band fill" : undefined,
+    buildingDots.checked ? "interior dots" : undefined,
+    buildingEdges.checked ? "edge ink" : undefined,
+  ].filter(Boolean);
+  buildingStyleStatus.textContent = layers.length
+    ? layers.join(" · ")
+    : "building geometry hidden";
+};
+buildingFill.onchange = applyBuildingAppearance;
+buildingDots.onchange = applyBuildingAppearance;
+buildingEdges.onchange = applyBuildingAppearance;
+buildingEdgeStrength.oninput = applyBuildingAppearance;
+buildingHeight.oninput = applyBuildingAppearance;
 bearing.oninput = () => map.setBearing(Number(bearing.value));
 pitch.oninput = () => map.setPitch(Number(pitch.value));
 map.on("rotate", () => {

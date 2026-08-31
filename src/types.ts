@@ -60,9 +60,13 @@ export interface LowResLabelsOptions {
   billboard?: boolean;
 }
 
+export type LowResBuildings3DStyle = "dotted" | "native";
+
 export interface LowResBuildings3DOptions {
   /** Whether extruded buildings are shown. They are only visible in surface mode. */
   visible?: boolean;
+  /** Low-resolution custom mesh or the original MapLibre extrusion. */
+  style?: LowResBuildings3DStyle;
   /** Named vector source containing the OpenMapTiles `building` layer. */
   sourceId?: string;
   /** Map zoom at which extrusions begin to appear. */
@@ -71,6 +75,14 @@ export interface LowResBuildings3DOptions {
   opacity?: number;
   /** Multiplier applied to `render_height` and `render_min_height`. */
   heightScale?: number;
+  /** Draw the three-band building surfaces. Dotted mode only. */
+  fill?: boolean;
+  /** Draw the wrapped surface-dot texture. Dotted mode only. */
+  dots?: boolean;
+  /** Draw roof-perimeter and vertical-corner ink. Dotted mode only. */
+  edges?: boolean;
+  /** CSS-pixel edge weight multiplier. Dotted mode only. */
+  edgeStrength?: number;
 }
 
 export type LowResFogMode = "regular" | "dithered";
@@ -319,7 +331,7 @@ export interface LowResBasemapOptions {
   /** Ground compositor projection. Defaults to the geographic surface. */
   projectionMode?: LowResProjectionMode;
   camera?: LowResCameraOptions;
-  /** Native MapLibre building extrusions for the surface projection. */
+  /** Theme-aware building extrusions for the surface projection. */
   buildings3D?: boolean | LowResBuildings3DOptions;
   /** Atmospheric fog for the 3D surface projection. */
   fog?: boolean | LowResFogOptions;
@@ -517,6 +529,25 @@ export interface RasterFrame {
   labels: LabelPlacement[];
   features: FeatureRecord[];
   warnings: LowResError[];
+}
+
+/** Internal per-tile geometry for the low-resolution building renderer. */
+export interface BuildingMeshTile {
+  tile: { z: number; x: number; y: number };
+  /** Unwrapped Web Mercator bounds used to clip buffered tile geometry. */
+  clip: readonly [number, number, number, number];
+  /** Interleaved x, y, z, u, v, normal-x, normal-y, normal-z values. */
+  vertices: Float32Array;
+  indices: Uint32Array;
+  /** Expanded roof/corner edge quads: start XYZ, end XYZ, t, side, strength. */
+  edgeVertices: Float32Array;
+}
+
+/** Internal building geometry produced alongside a semantic raster frame. */
+export interface BuildingMeshFrame {
+  generation: number;
+  state: RasterViewState;
+  tiles: BuildingMeshTile[];
 }
 
 export interface LowResDataFeatureRecord {

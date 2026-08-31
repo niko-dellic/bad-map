@@ -1,4 +1,6 @@
 import type {
+  BuildingMeshFrame,
+  LowResBuildings3DStyle,
   LowResLayerPackDescriptor,
   LowResSource,
   RasterFrame,
@@ -12,6 +14,12 @@ export type WorkerRequest =
       sources: Record<string, LowResSource>;
       layers: LowResLayerPackDescriptor[];
       maxCachedTiles: number;
+      buildings: {
+        visible: boolean;
+        style: LowResBuildings3DStyle;
+        sourceId: string;
+        minZoom: number;
+      };
     }
   | {
       type: "render";
@@ -19,6 +27,7 @@ export type WorkerRequest =
       state: RasterViewState;
       detailState?: RasterViewState;
     }
+  | { type: "set-buildings-visible"; visible: boolean }
   | { type: "set-time"; sourceId: string; timeKey: string | number }
   | {
       type: "set-heatmap";
@@ -30,12 +39,18 @@ export type WorkerRequest =
 
 export type WorkerResponse =
   | { type: "ready" }
-  | { type: "frame"; frame: RasterFrame; detailFrame?: RasterFrame }
+  | {
+      type: "frame";
+      frame: RasterFrame;
+      detailFrame?: RasterFrame;
+      buildingMesh?: BuildingMeshFrame;
+    }
   | { type: "error"; generation: number; message: string; cause?: string };
 
 export function frameTransferables(
   frame: RasterFrame,
   detailFrame?: RasterFrame,
+  buildingMesh?: BuildingMeshFrame,
 ): Transferable[] {
   const buffers = [
     frame.fill.buffer,
@@ -58,5 +73,12 @@ export function frameTransferables(
       detailFrame.scalar.buffer,
       detailFrame.heatmap.buffer,
     );
+  if (buildingMesh)
+    for (const tile of buildingMesh.tiles)
+      buffers.push(
+        tile.vertices.buffer,
+        tile.indices.buffer,
+        tile.edgeVertices.buffer,
+      );
   return buffers;
 }

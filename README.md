@@ -25,7 +25,7 @@ the cartography is greyscale.
 | Regional and coastal detail                                                                                                                                                                                                         | Dense urban detail                                                                                                                                                                                       |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ![Political boundaries across the continental United States](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/regional-political.png)<br>**Regional political boundaries** — low-zoom continental view | ![Transit lines across Midtown Manhattan](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/urban-transit.png)<br>**Urban transit** — high-zoom streets, transit, and labels |
-| ![Marine and land-use features around New York Harbor](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/coastal-semantic-packs.png)<br>**Marine and land use** — 12 × 24 configurable cells            | ![Extruded buildings over Lower Manhattan](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/buildings-3d.png)<br>**3D buildings** — pitched surface projection              |
+| ![Marine and land-use features around New York Harbor](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/coastal-semantic-packs.png)<br>**Marine and land use** — 12 × 24 configurable cells            | ![Inked dotted buildings over Lower Manhattan](https://raw.githubusercontent.com/niko-dellic/bad-map/main/docs/media/gallery/buildings-3d.png)<br>**Inked 3D buildings** — pitched surface projection    |
 
 ### Data layers
 
@@ -123,7 +123,7 @@ basemap.setLayerVisible("transit", true);
 | `colorMode`              | `"greyscale"`                              | Basemap and label color composition                |
 | `projectionMode`         | `"surface"`                                | Geographic surface or fixed screen lattice         |
 | `camera`                 | Surface rotation and pitch, `maxPitch: 60` | Map interaction policy                             |
-| `buildings3D`            | `false`                                    | Native OpenMapTiles building extrusions            |
+| `buildings3D`            | Visible fill + edges, dots off             | Low-resolution OpenMapTiles building extrusions    |
 | `fog`                    | Dithered and visible                       | Surface-edge atmosphere                            |
 | `heatmap` / `dataLayers` | Empty and hidden                           | Package-owned visualization layers                 |
 | `cell`                   | `8 × 16`, `dotSize: 2`                     | CSS-pixel character and dot geometry               |
@@ -203,7 +203,7 @@ Seven stable IDs divide the render stack:
 
 ```ts
 basemap.layerIds.base; // fills and low-resolution linework
-basemap.layerIds.buildings; // optional native 3D building extrusions
+basemap.layerIds.buildings; // optional dotted or native 3D buildings
 basemap.layerIds.data; // low-resolution data compositor
 basemap.layerIds.markers; // marker boundary
 basemap.layerIds.labels; // package labels
@@ -260,8 +260,8 @@ conventions for the built-in adapters.
 
 `LowResSource.request` supplies serializable `headers`, `credentials`, `mode`,
 and `referrerPolicy` values to TileJSON and tile requests made by the semantic
-worker. Native MapLibre layers, including optional 3D buildings, use MapLibre's
-own source and request configuration instead.
+worker. Dotted buildings share that worker request configuration. Native
+MapLibre building layers use MapLibre's own source and request configuration.
 
 ## Pixelated data layers
 
@@ -492,27 +492,67 @@ explicitly when pitch is not required:
 const basemap = new LowResBasemap({ projectionMode: "screen" });
 ```
 
-OpenMapTiles building heights can optionally be rendered as native MapLibre
-extrusions above the semantic surface and below application data:
+OpenMapTiles building heights render by default as low-resolution extrusions
+above the semantic surface and below application data. Interior dots default
+to off, leaving the three-band fill and silhouette edges:
 
 ```ts
 const basemap = new LowResBasemap({
-  buildings3D: { visible: true, minZoom: 14, opacity: 0.82 },
+  buildings3D: { visible: true, minZoom: 14, opacity: 0.82, dots: false },
 });
 
 basemap.setBuildings3DVisible(false);
+basemap.setBuildings3DAppearance({
+  fill: false,
+  dots: false,
+  edges: true,
+  edgeStrength: 1.25,
+  heightScale: 1,
+});
 ```
+
+| Option         | Default    | Purpose                                   |
+| -------------- | ---------- | ----------------------------------------- |
+| `visible`      | `true`     | Show buildings in surface mode            |
+| `style`        | `"dotted"` | Low-resolution mesh or native MapLibre    |
+| `sourceId`     | `"base"`   | Named OpenMapTiles-compatible source      |
+| `minZoom`      | `14`       | First zoom at which buildings appear      |
+| `opacity`      | `0.82`     | Surface and edge opacity                  |
+| `heightScale`  | `1`        | Height and minimum-height multiplier      |
+| `fill`         | `true`     | Draw three-band surfaces in dotted mode   |
+| `dots`         | `false`    | Draw interior surface dots in dotted mode |
+| `edges`        | `true`     | Draw roof and corner ink in dotted mode   |
+| `edgeStrength` | `1`        | CSS-pixel edge-weight multiplier          |
+
+When upgrading from 0.11.x, set `buildings3D: false` to retain the previous
+no-buildings default. The original smooth extrusion appearance remains
+available with `buildings3D: { visible: true, style: "native" }`.
 
 Changing building visibility never changes projection, bearing, or pitch.
 
 The building source defaults to the named `base` source and expects an
 OpenMapTiles `building` layer with `render_height`, `render_min_height`, and
-`hide_3d` properties. Extrusions use the active theme and greyscale mode. They
-are smooth native geometry by design; the semantic ground map retains its
-square-dot treatment. Configure authorization for the semantic worker through
-`LowResSource.request`; configure authorization for the native building source
-through the host MapLibre map. Terrain elevation is not yet part of surface
-mode.
+`hide_3d` properties. The default `dotted` style triangulates roofs and walls
+in the semantic worker, colors them from the active theme, and wraps the same
+2×4 square-dot lattice around their surfaces. Dots rotate and foreshorten with
+the buildings. Three flat lighting tones separate planes, restrained dots add
+surface texture, and cell-aligned roof perimeters and vertical corners restore
+the building silhouettes without introducing smooth vector outlines. Fill,
+dots, and edges can be enabled independently; edge-only mode retains a hidden
+depth prepass so rear geometry does not show through the buildings.
+
+The original MapLibre extrusion remains available when native rendering or
+host-map request handling is preferable:
+
+```ts
+const basemap = new LowResBasemap({
+  buildings3D: { visible: true, style: "native" },
+});
+```
+
+Dotted buildings use `LowResSource.request`; configure authorization for
+native buildings through the host MapLibre map. Terrain elevation and shaped
+roofs are not yet part of surface mode.
 
 ## Runtime API
 
@@ -525,7 +565,8 @@ mode.
 - `setSource(...)`, `setSources(...)`, and `setSourceTime(...)`
 - `setLayers(...)`, `getLayers()`, and `setLayerVisible(...)`
 - `setProjectionMode(...)` and `setCamera(...)`
-- `setBuildings3DVisible(...)` and `getBuildings3DVisible()`
+- `setBuildings3DVisible(...)`, `getBuildings3DVisible()`,
+  `setBuildings3DAppearance(...)`, and `getBuildings3DAppearance()`
 - `setFog(...)`, `setFogVisible(...)`, and `getFogOptions()`
 - `setHeatmap(...)`, `setHeatmapData(...)`, `setHeatmapVisible(...)`,
   `getHeatmapOptions()`, and `clearHeatmap()`

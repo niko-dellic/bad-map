@@ -11,6 +11,7 @@ import {
 import { FillClass, LabelInk, LineClass } from "../semantic/style.js";
 import type {
   DataRasterFrame,
+  BuildingMeshFrame,
   LowResFogMode,
   LowResTheme,
   RGB,
@@ -19,12 +20,16 @@ import type {
 import { invertMatrix4, smoothstep } from "./math.js";
 import {
   BASE_FRAGMENT,
+  BUILDING_EDGE_FRAGMENT,
+  BUILDING_EDGE_VERTEX,
   DATA_FRAGMENT,
   FOG_FRAGMENT,
   FOG_VERTEX,
   LABEL_FRAGMENT,
   LABEL_VERTEX,
   MARKER_FRAGMENT,
+  BUILDING_FRAGMENT,
+  BUILDING_VERTEX,
   VERTEX,
 } from "./shaders.js";
 
@@ -40,6 +45,7 @@ interface FogRenderState {
 interface FrameProvider {
   frame(): RasterFrame | undefined;
   detailFrame(): RasterFrame | undefined;
+  buildingMesh(): BuildingMeshFrame | undefined;
   dataFrame(): DataRasterFrame | undefined;
   viewState(): RasterFrame["state"] | undefined;
   theme(): LowResTheme;
@@ -51,6 +57,16 @@ interface FrameProvider {
   projectionMode(): "screen" | "surface";
   scalarPalette(): readonly [RGB, RGB, RGB, RGB];
   fog(): FogRenderState;
+  buildings(): {
+    visible: boolean;
+    minZoom: number;
+    opacity: number;
+    heightScale: number;
+    fill: boolean;
+    dots: boolean;
+    edges: boolean;
+    edgeStrength: number;
+  };
 }
 
 /** A stable no-op custom layer used as a public insertion boundary. */
@@ -59,6 +75,381 @@ export class SlotLayer implements CustomLayerInterface {
   readonly renderingMode = "2d" as const;
   constructor(readonly id: string) {}
   render(): void {}
+}
+
+interface BuildingGpuTile {
+  vertex: WebGLBuffer;
+  index: WebGLBuffer;
+  edge: WebGLBuffer;
+  surfaceVao: WebGLVertexArrayObject;
+  edgeVao: WebGLVertexArrayObject;
+  count: number;
+  edgeCount: number;
+  clip: readonly [number, number, number, number];
+}
+
+/** Theme-aware, surface-wrapped Braille building extrusions. */
+export class BuildingsLayer implements CustomLayerInterface {
+  readonly type = "custom" as const;
+  readonly renderingMode = "3d" as const;
+  #gl: WebGL2RenderingContext | undefined;
+  #shader: WebGLProgram | undefined;
+  #edgeShader: WebGLProgram | undefined;
+  #tiles: BuildingGpuTile[] = [];
+  #uploadedGeneration = -1;
+
+  constructor(
+    readonly id: string,
+    private provider: FrameProvider,
+  ) {}
+
+  onAdd(
+    _map: MapLibreMap,
+    context: WebGLRenderingContext | WebGL2RenderingContext,
+  ): void {
+    if (!("texImage3D" in context)) throw new Error("bad-map requires WebGL 2");
+    this.#gl = context;
+    this.#shader = program(context, BUILDING_VERTEX, BUILDING_FRAGMENT);
+    this.#edgeShader = program(
+      context,
+      BUILDING_EDGE_VERTEX,
+      BUILDING_EDGE_FRAGMENT,
+    );
+  }
+
+  render(
+    context: WebGLRenderingContext | WebGL2RenderingContext,
+    options: CustomRenderMethodInput,
+  ): void {
+    if (!this.#gl || !this.#shader || !this.#edgeShader || context !== this.#gl)
+      return;
+    const mesh = this.provider.buildingMesh();
+    const current = this.provider.viewState();
+    const settings = this.provider.buildings();
+    if (
+      !mesh ||
+      !current ||
+      !settings.visible ||
+      (!settings.fill && !settings.dots && !settings.edges) ||
+      this.provider.projectionMode() !== "surface" ||
+      current.zoom < settings.minZoom
+    )
+      return;
+    const gl = this.#gl;
+    if (mesh.generation !== this.#uploadedGeneration) this.#upload(gl, mesh);
+    if (!this.#tiles.length) return;
+    const previousVao = gl.getParameter(
+      gl.VERTEX_ARRAY_BINDING,
+    ) as WebGLVertexArrayObject | null;
+
+    gl.useProgram(this.#shader);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    gl.disable(gl.STENCIL_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    const [centerX, centerY] = lngLatToWorld(
+      mesh.state.center.lng,
+      mesh.state.center.lat,
+    );
+    const worldSize = 512 * 2 ** mesh.state.zoom;
+    const heightFactor =
+      Math.max(0, Math.min(1, current.zoom - settings.minZoom)) *
+      settings.heightScale;
+    gl.uniformMatrix4fv(
+      gl.getUniformLocation(this.#shader, "u_map_matrix"),
+      false,
+      options.defaultProjectionData.mainMatrix,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(this.#shader, "u_frame_center"),
+      centerX,
+      centerY,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(this.#shader, "u_frame_half_size"),
+      mesh.state.width / 2,
+      mesh.state.height / 2,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#shader, "u_frame_world_size"),
+      worldSize,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#shader, "u_frame_bearing"),
+      mesh.state.bearing,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#shader, "u_height_factor"),
+      heightFactor,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(this.#shader, "u_cell_size"),
+      mesh.state.cell.width,
+      mesh.state.cell.height,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#shader, "u_dot_size"),
+      mesh.state.cell.dotSize,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#shader, "u_opacity"),
+      settings.opacity,
+    );
+    gl.uniform3fv(
+      gl.getUniformLocation(this.#shader, "u_base_color"),
+      normalized([this.provider.theme().fills.building]),
+    );
+    gl.uniform3fv(
+      gl.getUniformLocation(this.#shader, "u_dot_color"),
+      normalized([this.provider.theme().lines.minor]),
+    );
+    gl.uniform1i(
+      gl.getUniformLocation(this.#shader, "u_fill_visible"),
+      settings.fill ? 1 : 0,
+    );
+    gl.uniform1i(
+      gl.getUniformLocation(this.#shader, "u_dots_visible"),
+      settings.dots ? 1 : 0,
+    );
+
+    const depthPrepass = !settings.fill && (settings.dots || settings.edges);
+    if (depthPrepass) {
+      gl.colorMask(false, false, false, false);
+      gl.uniform1i(gl.getUniformLocation(this.#shader, "u_depth_only"), 1);
+      this.#drawSurfaceTiles(gl, this.#shader);
+      gl.colorMask(true, true, true, true);
+      gl.depthMask(false);
+    }
+    if (settings.fill || settings.dots) {
+      gl.uniform1i(gl.getUniformLocation(this.#shader, "u_depth_only"), 0);
+      this.#drawSurfaceTiles(gl, this.#shader);
+    }
+
+    if (!settings.edges) {
+      gl.bindVertexArray(previousVao);
+      gl.depthMask(true);
+      return;
+    }
+    gl.useProgram(this.#edgeShader);
+    gl.depthMask(false);
+    gl.uniformMatrix4fv(
+      gl.getUniformLocation(this.#edgeShader, "u_map_matrix"),
+      false,
+      options.defaultProjectionData.mainMatrix,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(this.#edgeShader, "u_frame_center"),
+      centerX,
+      centerY,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(this.#edgeShader, "u_frame_half_size"),
+      mesh.state.width / 2,
+      mesh.state.height / 2,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#edgeShader, "u_frame_world_size"),
+      worldSize,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#edgeShader, "u_frame_bearing"),
+      mesh.state.bearing,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#edgeShader, "u_height_factor"),
+      heightFactor,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(this.#edgeShader, "u_view_size"),
+      current.width,
+      current.height,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#edgeShader, "u_edge_width"),
+      Math.max(2, mesh.state.cell.dotSize * 1.2) * settings.edgeStrength,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(this.#edgeShader, "u_cell_size"),
+      mesh.state.cell.width,
+      mesh.state.cell.height,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#edgeShader, "u_dot_size"),
+      mesh.state.cell.dotSize,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#edgeShader, "u_pixel_ratio"),
+      current.pixelRatio,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.#edgeShader, "u_opacity"),
+      settings.opacity,
+    );
+    gl.uniform3fv(
+      gl.getUniformLocation(this.#edgeShader, "u_color"),
+      normalized([this.provider.theme().lines.secondary]),
+    );
+    for (const tile of this.#tiles) {
+      if (!tile.edgeCount) continue;
+      gl.bindVertexArray(tile.edgeVao);
+      gl.uniform4f(
+        gl.getUniformLocation(this.#edgeShader, "u_clip"),
+        tile.clip[0],
+        tile.clip[1],
+        tile.clip[2],
+        tile.clip[3],
+      );
+      gl.drawArrays(gl.TRIANGLES, 0, tile.edgeCount);
+    }
+    gl.bindVertexArray(previousVao);
+    gl.depthMask(true);
+  }
+
+  #drawSurfaceTiles(gl: WebGL2RenderingContext, shader: WebGLProgram): void {
+    for (const tile of this.#tiles) {
+      gl.bindVertexArray(tile.surfaceVao);
+      gl.uniform4f(
+        gl.getUniformLocation(shader, "u_clip"),
+        tile.clip[0],
+        tile.clip[1],
+        tile.clip[2],
+        tile.clip[3],
+      );
+      gl.drawElements(gl.TRIANGLES, tile.count, gl.UNSIGNED_INT, 0);
+    }
+  }
+
+  #attribute(
+    gl: WebGL2RenderingContext,
+    shader: WebGLProgram,
+    name: string,
+    size: number,
+    stride: number,
+    offset: number,
+  ): void {
+    const location = gl.getAttribLocation(shader, name);
+    gl.enableVertexAttribArray(location);
+    gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset);
+  }
+
+  #upload(gl: WebGL2RenderingContext, mesh: BuildingMeshFrame): void {
+    this.#releaseTiles(gl);
+    const previousVao = gl.getParameter(
+      gl.VERTEX_ARRAY_BINDING,
+    ) as WebGLVertexArrayObject | null;
+    const previousArrayBuffer = gl.getParameter(
+      gl.ARRAY_BUFFER_BINDING,
+    ) as WebGLBuffer | null;
+    this.#tiles = mesh.tiles.flatMap((tile) => {
+      const vertex = gl.createBuffer();
+      const index = gl.createBuffer();
+      const edge = gl.createBuffer();
+      const surfaceVao = gl.createVertexArray();
+      const edgeVao = gl.createVertexArray();
+      if (!vertex || !index || !edge || !surfaceVao || !edgeVao) {
+        if (vertex) gl.deleteBuffer(vertex);
+        if (index) gl.deleteBuffer(index);
+        if (edge) gl.deleteBuffer(edge);
+        if (surfaceVao) gl.deleteVertexArray(surfaceVao);
+        if (edgeVao) gl.deleteVertexArray(edgeVao);
+        return [];
+      }
+
+      const stride = 8 * Float32Array.BYTES_PER_ELEMENT;
+      gl.bindVertexArray(surfaceVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vertex);
+      gl.bufferData(gl.ARRAY_BUFFER, tile.vertices, gl.STATIC_DRAW);
+      this.#attribute(gl, this.#shader!, "a_position", 3, stride, 0);
+      this.#attribute(
+        gl,
+        this.#shader!,
+        "a_uv",
+        2,
+        stride,
+        3 * Float32Array.BYTES_PER_ELEMENT,
+      );
+      this.#attribute(
+        gl,
+        this.#shader!,
+        "a_normal",
+        3,
+        stride,
+        5 * Float32Array.BYTES_PER_ELEMENT,
+      );
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, index);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tile.indices, gl.STATIC_DRAW);
+
+      const edgeStride = 9 * Float32Array.BYTES_PER_ELEMENT;
+      gl.bindVertexArray(edgeVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, edge);
+      gl.bufferData(gl.ARRAY_BUFFER, tile.edgeVertices, gl.STATIC_DRAW);
+      this.#attribute(gl, this.#edgeShader!, "a_start", 3, edgeStride, 0);
+      this.#attribute(
+        gl,
+        this.#edgeShader!,
+        "a_end",
+        3,
+        edgeStride,
+        3 * Float32Array.BYTES_PER_ELEMENT,
+      );
+      this.#attribute(
+        gl,
+        this.#edgeShader!,
+        "a_corner",
+        2,
+        edgeStride,
+        6 * Float32Array.BYTES_PER_ELEMENT,
+      );
+      this.#attribute(
+        gl,
+        this.#edgeShader!,
+        "a_strength",
+        1,
+        edgeStride,
+        8 * Float32Array.BYTES_PER_ELEMENT,
+      );
+      return [
+        {
+          vertex,
+          index,
+          edge,
+          surfaceVao,
+          edgeVao,
+          count: tile.indices.length,
+          edgeCount: tile.edgeVertices.length / 9,
+          clip: tile.clip,
+        },
+      ];
+    });
+    gl.bindVertexArray(previousVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, previousArrayBuffer);
+    this.#uploadedGeneration = mesh.generation;
+  }
+
+  #releaseTiles(gl: WebGL2RenderingContext): void {
+    for (const tile of this.#tiles) {
+      gl.deleteBuffer(tile.vertex);
+      gl.deleteBuffer(tile.index);
+      gl.deleteBuffer(tile.edge);
+      gl.deleteVertexArray(tile.surfaceVao);
+      gl.deleteVertexArray(tile.edgeVao);
+    }
+    this.#tiles = [];
+  }
+
+  onRemove(): void {
+    if (!this.#gl) return;
+    this.#releaseTiles(this.#gl);
+    if (this.#shader) this.#gl.deleteProgram(this.#shader);
+    if (this.#edgeShader) this.#gl.deleteProgram(this.#edgeShader);
+    this.#shader = undefined;
+    this.#edgeShader = undefined;
+    this.#gl = undefined;
+  }
 }
 
 function compile(

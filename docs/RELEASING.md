@@ -5,9 +5,10 @@ The configured publisher is repository `niko-dellic/bad-map`, workflow
 `release.yml`, and GitHub environment `npm`. Do not store a long-lived npm token
 in repository secrets.
 
-The manual bootstrap releases are complete. The next release is the first one
-that must prove the complete OIDC and npm provenance path; after it succeeds,
-revoke any remaining token-based publishing access.
+Trusted publishing and npm provenance have been verified in production. Keep
+the release workflow, repository identity, and `npm` environment aligned with
+the trusted-publisher configuration; releases must not depend on a long-lived
+npm token.
 
 ## Release checklist
 

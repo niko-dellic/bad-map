@@ -1,5 +1,6 @@
 export {
   BaseLayer,
+  BuildingsLayer,
   DataLayer,
   FogLayer,
   LabelsLayer,

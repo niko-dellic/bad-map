@@ -171,6 +171,11 @@ test("keeps the bearing slider aligned with mouse rotation", async ({
 test("toggles theme-aware 3D buildings in the surface stack", async ({
   page,
 }) => {
+  const webglErrors: string[] = [];
+  page.on("console", (message) => {
+    if (/WebGL: INVALID_OPERATION/.test(message.text()))
+      webglErrors.push(message.text());
+  });
   const cameraBefore = await page.evaluate(() => {
     const { map } = (
       window as typeof window & {
@@ -182,6 +187,10 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
     return { bearing: map.getBearing(), pitch: map.getPitch() };
   });
   await page.locator("#tab-layers").click();
+  await expect(page.locator("#buildings-3d")).toBeChecked();
+  await page.locator("#buildings-3d").uncheck();
+  await expect(page.locator("#buildings-3d")).not.toBeChecked();
+  const generationBefore = (await diagnostics(page)).lastGeneration;
   await page.locator("#buildings-3d").check();
   await expect(page.locator("#projection")).toHaveValue("surface");
   const enabled = await page.evaluate(() => {
@@ -190,9 +199,9 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
         __badMapDemo: {
           map: {
             getBearing(): number;
+            getLayer(id: string): { type?: string } | undefined;
             getLayersOrder(): string[];
-            getLayoutProperty(id: string, property: string): unknown;
-            getPaintProperty(id: string, property: string): unknown;
+            getSource(id: string): unknown;
             getPitch(): number;
           };
           basemap: {
@@ -209,14 +218,8 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
     const ids = map.getLayersOrder();
     return {
       requested: basemap.getBuildings3DVisible(),
-      visibility: map.getLayoutProperty(
-        basemap.layerIds.buildings,
-        "visibility",
-      ),
-      color: map.getPaintProperty(
-        basemap.layerIds.buildings,
-        "fill-extrusion-color",
-      ),
+      type: map.getLayer(basemap.layerIds.buildings)?.type,
+      nativeSource: Boolean(map.getSource("bad-map-buildings-source")),
       baseIndex: ids.indexOf(basemap.layerIds.base),
       buildingIndex: ids.indexOf(basemap.layerIds.buildings),
       dataIndex: ids.indexOf(basemap.layerIds.data),
@@ -224,12 +227,16 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
     };
   });
   expect(enabled.requested).toBe(true);
-  expect(enabled.visibility).toBe("visible");
-  expect(enabled.color).toMatch(/^rgb/);
+  expect(enabled.type).toBe("custom");
+  expect(enabled.nativeSource).toBe(false);
   expect(enabled.baseIndex).toBeLessThan(enabled.buildingIndex);
   expect(enabled.buildingIndex).toBeLessThan(enabled.dataIndex);
   expect(enabled.camera).toEqual(cameraBefore);
+  await expect
+    .poll(async () => (await diagnostics(page)).lastGeneration)
+    .toBeGreaterThan(generationBefore);
 
+  const pitchedGeneration = (await diagnostics(page)).lastGeneration;
   await page.evaluate(() => {
     (
       window as typeof window & {
@@ -240,37 +247,37 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
     ).__badMapDemo.map.jumpTo({ zoom: 16, pitch: 62, bearing: 24 });
   });
   await expect
-    .poll(
-      () =>
-        page.evaluate(() => {
-          const { map, basemap } = (
-            window as typeof window & {
-              __badMapDemo: {
-                map: {
-                  queryRenderedFeatures(
-                    geometry: undefined,
-                    options: { layers: string[] },
-                  ): unknown[];
-                  querySourceFeatures(
-                    sourceId: string,
-                    options: { sourceLayer: string },
-                  ): unknown[];
-                };
-                basemap: { layerIds: { buildings: string } };
-              };
-            }
-          ).__badMapDemo;
-          const source = map.querySourceFeatures("bad-map-buildings-source", {
-            sourceLayer: "building",
-          }).length;
-          const rendered = map.queryRenderedFeatures(undefined, {
-            layers: [basemap.layerIds.buildings],
-          }).length;
-          return Math.min(source, rendered);
-        }),
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThan(0);
+    .poll(async () => (await diagnostics(page)).lastGeneration, {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(pitchedGeneration);
+  const edgeOnly = await page.evaluate(() => {
+    const basemap = (
+      window as typeof window & {
+        __badMapDemo: {
+          basemap: {
+            setBuildings3DAppearance(options: unknown): void;
+            getBuildings3DAppearance(): Record<string, boolean | number>;
+          };
+        };
+      }
+    ).__badMapDemo.basemap;
+    basemap.setBuildings3DAppearance({
+      fill: false,
+      dots: false,
+      edges: true,
+      edgeStrength: 1.4,
+    });
+    return basemap.getBuildings3DAppearance();
+  });
+  expect(edgeOnly).toMatchObject({
+    fill: false,
+    dots: false,
+    edges: true,
+    edgeStrength: 1.4,
+  });
+  await page.waitForTimeout(250);
+  expect(webglErrors).toEqual([]);
 
   await page.locator("#tab-display").click();
   await page.locator("#projection").selectOption("screen");
@@ -279,14 +286,61 @@ test("toggles theme-aware 3D buildings in the surface stack", async ({
     const { map, basemap } = (
       window as typeof window & {
         __badMapDemo: {
-          map: { getLayoutProperty(id: string, property: string): unknown };
+          map: { getLayer(id: string): { type?: string } | undefined };
+          basemap: {
+            layerIds: { buildings: string };
+            getBuildings3DVisible(): boolean;
+          };
+        };
+      }
+    ).__badMapDemo;
+    return {
+      type: map.getLayer(basemap.layerIds.buildings)?.type,
+      requested: basemap.getBuildings3DVisible(),
+    };
+  });
+  expect(disabled).toEqual({ type: "custom", requested: false });
+});
+
+test("retains native MapLibre extrusions as a fallback", async ({ page }) => {
+  await page.goto("/demo/?building-style=native");
+  await expect(page.locator("#status")).toContainText("rendered in");
+  await page.locator("#settings-toggle").click();
+  await page.locator("#tab-layers").click();
+  await page.locator("#buildings-3d").check();
+  const native = await page.evaluate(() => {
+    const { map, basemap } = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: {
+            getLayer(id: string): { type?: string } | undefined;
+            getSource(id: string): unknown;
+            getLayoutProperty(id: string, property: string): unknown;
+            getPaintProperty(id: string, property: string): unknown;
+          };
           basemap: { layerIds: { buildings: string } };
         };
       }
     ).__badMapDemo;
-    return map.getLayoutProperty(basemap.layerIds.buildings, "visibility");
+    return {
+      type: map.getLayer(basemap.layerIds.buildings)?.type,
+      source: Boolean(map.getSource("bad-map-buildings-source")),
+      visibility: map.getLayoutProperty(
+        basemap.layerIds.buildings,
+        "visibility",
+      ),
+      color: map.getPaintProperty(
+        basemap.layerIds.buildings,
+        "fill-extrusion-color",
+      ),
+    };
   });
-  expect(disabled).toBe("none");
+  expect(native).toMatchObject({
+    type: "fill-extrusion",
+    source: true,
+    visibility: "visible",
+  });
+  expect(native.color).toMatch(/^rgb/);
 });
 
 test("keeps producing exact frames after pan, zoom, and resize", async ({
