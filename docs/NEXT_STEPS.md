@@ -19,7 +19,7 @@ geometry, independent labels, typed nonfatal failures, and public MapLibre APIs.
 | 3. Transit reference pack      | Foundation complete | Transit-only filtering, high-rank routes, stations through the point-label pipeline, stable ownership, and street coexistence                                     |
 | 4. Numeric and time-aware data | Foundation complete | Quantized scalar texture, weather and elevation defaults, `{time}` tile templates, runtime time updates, and time-keyed caches                                    |
 | 5. Visualization and picking   | Complete            | Data, marker, label, and interaction boundaries; owner-texture hover; persistent selection; pack/source-aware queries; filter helper                              |
-| 6. Rotation and 3D             | Experimental        | Bearing-aware screen mode, camera-footprint-fitted world surface, geographic picking, and optional theme-aware native building extrusions                         |
+| 6. Rotation and 3D             | Experimental        | Bearing-aware screen mode, camera-footprint-fitted world surface, geographic picking, dotted building meshes, and native fallback                                 |
 | 7. Point-density heatmaps      | Foundation complete | Native comparison plus weighted worker kernels, stable domains, compact density buffers, a dedicated data compositor, square-dot dithering, and runtime controls  |
 | 8. Extensible data overlays    | Complete            | ID-based heatmap, waypoint, GeoJSON, and trips layers; independent worker; RGBA/owner buffers; playback; picking; and lazy reference demos                        |
 
@@ -91,9 +91,10 @@ pitch are supplied by MapLibre's public custom-layer matrix, so the lattice
 foreshortens with the surface. The raster frame follows the full camera ground
 footprint, while a feathered full-zoom detail frame preserves near-field
 semantic detail and lattice density at extreme pitch without unbounded memory.
-Optional native building extrusions use OpenMapTiles height fields and occupy a
-stable slot between the semantic surface and application data. This is
-deliberately described as low-resolution 3D rather than terminal emulation.
+The default dotted building meshes use OpenMapTiles height fields and occupy a
+stable slot between the semantic surface and application data. Roofs and walls
+carry the same foreshortened Braille lattice as the surface; optional native
+MapLibre extrusions remain available as a compatibility fallback.
 
 ## Production-depth roadmap
 
@@ -150,8 +151,8 @@ deliberately described as low-resolution 3D rather than terminal emulation.
 The current experimental surface is flat. A production 3D implementation
 should proceed in this order:
 
-1. Add an optional quantized/dot-style building renderer alongside the current
-   smooth native extrusions.
+1. Evaluate voxel or height-field building styles alongside the dotted mesh
+   and native fallback.
 2. Split fills, line dots, and markers into world-space meshes or instances.
 3. Replace the foreshortened label texture with anchored billboards and
    screen-space collision.

@@ -8,6 +8,7 @@ import DataRasterWorker from "../workers/data.worker.ts?worker&inline";
 import RasterWorker from "../workers/raster.worker.ts?worker&inline";
 import {
   BaseLayer,
+  BuildingsLayer,
   DataLayer,
   FogLayer,
   LabelsLayer,
@@ -30,6 +31,7 @@ import { streets } from "../semantic/packs.js";
 import { composeTheme, resolveTheme } from "../themes/index.js";
 import type {
   CellGeometry,
+  BuildingMeshFrame,
   DataRasterFrame,
   LowResBasemapOptions,
   LowResBuildings3DOptions,
@@ -147,12 +149,14 @@ export class LowResBasemap {
   #dataWorkerFactory: () => Worker;
   #frame: RasterFrame | undefined;
   #detailFrame: RasterFrame | undefined;
+  #buildingMesh: BuildingMeshFrame | undefined;
   #dataFrame: DataRasterFrame | undefined;
   #generation = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #lastRenderRequest = 0;
   #attribution: AttributionControl | undefined;
   #baseLayer: BaseLayer | undefined;
+  #buildingsLayer: BuildingsLayer | undefined;
   #dataLayer: DataLayer | undefined;
   #markerLayer: MarkerLayer | undefined;
   #labelsLayer: LabelsLayer | undefined;
@@ -252,10 +256,12 @@ export class LowResBasemap {
       sources: this.#sources,
       layers: this.#layers,
       maxCachedTiles: this.#options.maxCachedTiles,
+      buildings: this.#workerBuildingsOptions(),
     });
     const provider = {
       frame: () => this.#frame,
       detailFrame: () => this.#detailFrame,
+      buildingMesh: () => this.#buildingMesh,
       dataFrame: () => this.#dataFrame,
       viewState: () => this.#currentViewState(),
       theme: () => this.#theme,
@@ -277,14 +283,29 @@ export class LowResBasemap {
         ...this.#fog,
         color: this.#fog.color ?? this.#theme.fills.ground,
       }),
+      buildings: () => ({
+        visible: this.#buildings3D.visible,
+        minZoom: this.#buildings3D.minZoom,
+        opacity: this.#buildings3D.opacity,
+        heightScale: this.#buildings3D.heightScale,
+        fill: this.#buildings3D.fill,
+        dots: this.#buildings3D.dots,
+        edges: this.#buildings3D.edges,
+        edgeStrength: this.#buildings3D.edgeStrength,
+      }),
     };
     this.#baseLayer = new BaseLayer(this.layerIds.base, provider);
+    this.#buildingsLayer =
+      this.#buildings3D.style === "dotted"
+        ? new BuildingsLayer(this.layerIds.buildings, provider)
+        : undefined;
     this.#dataLayer = new DataLayer(this.layerIds.data, provider);
     this.#markerLayer = new MarkerLayer(this.layerIds.markers, provider);
     this.#labelsLayer = new LabelsLayer(this.layerIds.labels, provider);
     this.#fogLayer = new FogLayer(this.layerIds.fog, provider);
     map.addLayer(this.#baseLayer);
-    this.#ensureBuildings3DLayer();
+    if (this.#buildingsLayer) map.addLayer(this.#buildingsLayer);
+    else this.#ensureBuildings3DLayer();
     map.addLayer(this.#dataLayer);
     map.addLayer(this.#markerLayer);
     map.addLayer(this.#labelsLayer);
@@ -345,8 +366,10 @@ export class LowResBasemap {
     this.#map = undefined;
     this.#frame = undefined;
     this.#detailFrame = undefined;
+    this.#buildingMesh = undefined;
     this.#dataFrame = undefined;
     this.#baseLayer = undefined;
+    this.#buildingsLayer = undefined;
     this.#dataLayer = undefined;
     this.#markerLayer = undefined;
     this.#labelsLayer = undefined;
@@ -409,6 +432,10 @@ export class LowResBasemap {
     this.#projectionMode = mode;
     if (this.#map) this.#configureCamera(this.#map, true);
     this.#syncBuildings3DVisibility();
+    this.#post({
+      type: "set-buildings-visible",
+      visible: this.#dottedBuildingsVisible(),
+    });
     this.refresh();
     this.#emit("projectionchange", { target: this, mode });
     return this;
@@ -427,12 +454,48 @@ export class LowResBasemap {
     this.#buildings3D.visible = visible;
     this.#ensureBuildings3DLayer();
     this.#syncBuildings3DVisibility();
+    this.#post({
+      type: "set-buildings-visible",
+      visible: this.#dottedBuildingsVisible(),
+    });
+    if (visible) this.refresh();
     this.#emit("buildingschange", { target: this, visible });
     return this;
   }
 
   getBuildings3DVisible(): boolean {
     return this.#buildings3D.visible;
+  }
+
+  setBuildings3DAppearance(
+    options: Pick<
+      LowResBuildings3DOptions,
+      "fill" | "dots" | "edges" | "edgeStrength" | "heightScale"
+    >,
+  ): this {
+    const next = normalizeBuildings3D({ ...this.#buildings3D, ...options });
+    this.#buildings3D.fill = next.fill;
+    this.#buildings3D.dots = next.dots;
+    this.#buildings3D.edges = next.edges;
+    this.#buildings3D.edgeStrength = next.edgeStrength;
+    this.#buildings3D.heightScale = next.heightScale;
+    this.#applyBuildings3DStyle();
+    return this;
+  }
+
+  getBuildings3DAppearance(): Required<
+    Pick<
+      LowResBuildings3DOptions,
+      "fill" | "dots" | "edges" | "edgeStrength" | "heightScale"
+    >
+  > {
+    return {
+      fill: this.#buildings3D.fill,
+      dots: this.#buildings3D.dots,
+      edges: this.#buildings3D.edges,
+      edgeStrength: this.#buildings3D.edgeStrength,
+      heightScale: this.#buildings3D.heightScale,
+    };
   }
 
   setFog(options: LowResFogOptions): this {
@@ -724,6 +787,7 @@ export class LowResBasemap {
       sources: this.#sources,
       layers: this.#layers,
       maxCachedTiles: this.#options.maxCachedTiles,
+      buildings: this.#workerBuildingsOptions(),
     });
     this.#refreshAttribution();
     this.refresh();
@@ -1017,6 +1081,7 @@ export class LowResBasemap {
     if (message.frame.generation < (this.#frame?.generation ?? -1)) return;
     this.#frame = message.frame;
     this.#detailFrame = message.detailFrame;
+    this.#buildingMesh = message.buildingMesh;
     for (const warning of message.frame.warnings) this.#emitError(warning);
     this.#map?.triggerRepaint();
     this.#emit("render", {
@@ -1301,6 +1366,7 @@ export class LowResBasemap {
       sources: this.#sources,
       layers: this.#layers,
       maxCachedTiles: this.#options.maxCachedTiles,
+      buildings: this.#workerBuildingsOptions(),
     });
     this.refresh();
   }
@@ -1327,6 +1393,16 @@ export class LowResBasemap {
 
   #ensureBuildings3DLayer(): void {
     const map = this.#map;
+    if (this.#buildings3D.style === "dotted") {
+      if (!this.#sources[this.#buildings3D.sourceId])
+        this.#emitError({
+          code: "source",
+          message: `Unknown 3D building source: ${this.#buildings3D.sourceId}`,
+          fatal: false,
+          sourceId: this.#buildings3D.sourceId,
+        });
+      return;
+    }
     if (!map || map.getLayer(this.layerIds.buildings)) return;
     const source = this.#sources[this.#buildings3D.sourceId];
     if (!source) {
@@ -1377,6 +1453,10 @@ export class LowResBasemap {
   #rebuildBuildings3DLayer(): void {
     const map = this.#map;
     if (!map) return;
+    if (this.#buildings3D.style === "dotted") {
+      this.#ensureBuildings3DLayer();
+      return;
+    }
     if (map.getLayer(this.layerIds.buildings))
       map.removeLayer(this.layerIds.buildings);
     if (map.getSource(BUILDINGS_SOURCE_ID))
@@ -1387,6 +1467,10 @@ export class LowResBasemap {
   #syncBuildings3DVisibility(): void {
     const map = this.#map;
     if (!map) return;
+    if (this.#buildings3D.style === "dotted") {
+      map.triggerRepaint();
+      return;
+    }
     this.#ensureBuildings3DLayer();
     if (!map.getLayer(this.layerIds.buildings)) return;
     map.setLayoutProperty(
@@ -1400,6 +1484,10 @@ export class LowResBasemap {
 
   #applyBuildings3DStyle(): void {
     const map = this.#map;
+    if (this.#buildings3D.style === "dotted") {
+      map?.triggerRepaint();
+      return;
+    }
     if (!map?.getLayer(this.layerIds.buildings)) return;
     const paint = this.#buildings3DPaint();
     map.setPaintProperty(
@@ -1464,6 +1552,26 @@ export class LowResBasemap {
       ],
       "fill-extrusion-opacity": this.#buildings3D.opacity,
       "fill-extrusion-vertical-gradient": true,
+    };
+  }
+
+  #dottedBuildingsVisible(): boolean {
+    return (
+      this.#buildings3D.style === "dotted" &&
+      this.#projectionMode === "surface" &&
+      this.#buildings3D.visible
+    );
+  }
+
+  #workerBuildingsOptions(): Extract<
+    WorkerRequest,
+    { type: "configure" }
+  >["buildings"] {
+    return {
+      visible: this.#dottedBuildingsVisible(),
+      style: this.#buildings3D.style,
+      sourceId: this.#buildings3D.sourceId,
+      minZoom: this.#buildings3D.minZoom,
     };
   }
 

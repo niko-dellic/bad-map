@@ -3,11 +3,11 @@ export { LowResBasemap } from "./basemap/low-res-basemap.js";
 export { DARK_THEME, LIGHT_THEME } from "./themes/index.js";
 export { composeTheme, greyscaleColor, relativeLuminance, } from "./themes/index.js";
 export { featureMatches, landuse, marine, political, streets, topographic, transit, weather, } from "./semantic/packs.js";
-export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResDataAccessor, LowResDataFeature, LowResDataLayer, LowResDataLayerBase, LowResDataLayerState, LowResDataLayerUpdate, LowResCameraOptions, LowResBuildings3DOptions, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResFogMode, LowResFogOptions, LowResHeatmapOptions, LowResHeatmapDataLayer, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResLabelsOptions, LowResProjectionMode, LowResGeoJSONDataLayer, LowResGeoJSONFillStyle, LowResGeoJSONLineStyle, LowResGeoJSONPointStyle, LowResSource, LowResTheme, LowResTrip, LowResTripsDataLayer, LowResTripsPlayback, LowResTripsSeekOptions, LowResWaypoint, LowResWaypointDataLayer, LowResWaypointStyle, LowResWorkerFactories, RGB, } from "./types.js";
+export type { BuiltinThemeName, BuiltinLayerAdapter, CellGeometry, LowResBasemapLike, LowResBasemapOptions, LowResColorMode, LowResDataAccessor, LowResDataFeature, LowResDataLayer, LowResDataLayerBase, LowResDataLayerState, LowResDataLayerUpdate, LowResCameraOptions, LowResBuildings3DOptions, LowResBuildings3DStyle, LowResError, LowResEventMap, LowResFeature, LowResFeatureKind, LowResFogMode, LowResFogOptions, LowResHeatmapOptions, LowResHeatmapDataLayer, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResLabelsOptions, LowResProjectionMode, LowResGeoJSONDataLayer, LowResGeoJSONFillStyle, LowResGeoJSONLineStyle, LowResGeoJSONPointStyle, LowResSource, LowResTheme, LowResTrip, LowResTripsDataLayer, LowResTripsPlayback, LowResTripsSeekOptions, LowResWaypoint, LowResWaypointDataLayer, LowResWaypointStyle, LowResWorkerFactories, RGB, } from "./types.js";
 
 // dist/basemap/low-res-basemap.d.ts
 import { type Map as MapLibreMap, type PointLike } from "maplibre-gl";
-import type { CellGeometry, LowResBasemapOptions, LowResColorMode, LowResDataFeature, LowResDataLayer, LowResDataLayerState, LowResDataLayerUpdate, LowResEventMap, LowResFeature, LowResFogOptions, LowResHeatmapOptions, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTripsPlayback, LowResTripsSeekOptions, RGB } from "../types.js";
+import type { CellGeometry, LowResBasemapOptions, LowResBuildings3DOptions, LowResColorMode, LowResDataFeature, LowResDataLayer, LowResDataLayerState, LowResDataLayerUpdate, LowResEventMap, LowResFeature, LowResFogOptions, LowResHeatmapOptions, LowResHeatmapPoint, LowResLayerPackDescriptor, LowResProjectionMode, LowResSource, LowResTripsPlayback, LowResTripsSeekOptions, RGB } from "../types.js";
 type Listener<K extends keyof LowResEventMap> = (event: LowResEventMap[K]) => void;
 export declare class LowResBasemap {
     #private;
@@ -34,6 +34,8 @@ export declare class LowResBasemap {
     setCamera(options: LowResBasemapOptions["camera"]): this;
     setBuildings3DVisible(visible: boolean): this;
     getBuildings3DVisible(): boolean;
+    setBuildings3DAppearance(options: Pick<LowResBuildings3DOptions, "fill" | "dots" | "edges" | "edgeStrength" | "heightScale">): this;
+    getBuildings3DAppearance(): Required<Pick<LowResBuildings3DOptions, "fill" | "dots" | "edges" | "edgeStrength" | "heightScale">>;
     setFog(options: LowResFogOptions): this;
     setFogVisible(visible: boolean): this;
     getFogOptions(): Required<Omit<LowResFogOptions, "color">> & {

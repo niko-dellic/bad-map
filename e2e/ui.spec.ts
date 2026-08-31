@@ -469,6 +469,32 @@ test("organizes controls into tabs and names the next cell preset", async ({
       page.locator(control).locator("xpath=ancestor::section/h2"),
     ).toHaveText("Map layers");
   }
+  await expect(page.locator("#building-fill")).toBeChecked();
+  await expect(page.locator("#building-dots")).not.toBeChecked();
+  await expect(page.locator("#building-edges")).toBeChecked();
+  await page.locator("#building-fill").uncheck();
+  await page.locator("#building-edge-strength").fill("1.5");
+  await page.locator("#building-height").fill("1.25");
+  await expect(page.locator("#building-style-status")).toHaveText("edge ink");
+  expect(
+    await page.evaluate(() =>
+      (
+        window as typeof window & {
+          __badMapDemo: {
+            basemap: {
+              getBuildings3DAppearance(): Record<string, number | boolean>;
+            };
+          };
+        }
+      ).__badMapDemo.basemap.getBuildings3DAppearance(),
+    ),
+  ).toEqual({
+    fill: false,
+    dots: false,
+    edges: true,
+    edgeStrength: 1.5,
+    heightScale: 1.25,
+  });
   await expect(page.locator("#weather-source")).toHaveCount(0);
   await expect(page.locator("#weather-time")).toHaveCount(0);
 

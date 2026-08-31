@@ -90,14 +90,23 @@ export function normalizeBuildings3D(
   const configured = typeof options === "object" ? options : {};
   const result = {
     visible:
-      typeof options === "boolean" ? options : (configured.visible ?? false),
+      typeof options === "boolean" ? options : (configured.visible ?? true),
+    style: configured.style ?? "dotted",
     sourceId: configured.sourceId ?? "base",
     minZoom: configured.minZoom ?? 14,
     opacity: configured.opacity ?? 0.82,
     heightScale: configured.heightScale ?? 1,
+    fill: configured.fill ?? true,
+    dots: configured.dots ?? false,
+    edges: configured.edges ?? true,
+    edgeStrength: configured.edgeStrength ?? 1,
   };
   if (!result.sourceId.trim())
     throw new TypeError("buildings3D.sourceId cannot be empty");
+  if (result.style !== "dotted" && result.style !== "native")
+    throw new TypeError(
+      `Unsupported buildings3D style: ${String(result.style)}`,
+    );
   if (!Number.isFinite(result.minZoom) || result.minZoom < 0)
     throw new RangeError("buildings3D.minZoom must be non-negative");
   if (
@@ -108,6 +117,14 @@ export function normalizeBuildings3D(
     throw new RangeError("buildings3D.opacity must be between zero and one");
   if (!Number.isFinite(result.heightScale) || result.heightScale < 0)
     throw new RangeError("buildings3D.heightScale must be non-negative");
+  if (
+    !Number.isFinite(result.edgeStrength) ||
+    result.edgeStrength < 0 ||
+    result.edgeStrength > 4
+  )
+    throw new RangeError(
+      "buildings3D.edgeStrength must be between zero and four",
+    );
   return result;
 }
 

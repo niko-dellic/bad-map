@@ -58,6 +58,186 @@ void main() {
   }
 }`;
 
+export const BUILDING_VERTEX = `#version 300 es
+precision highp float;
+in vec3 a_position;
+in vec2 a_uv;
+in vec3 a_normal;
+out vec2 v_uv;
+out vec2 v_world;
+out vec3 v_normal;
+uniform mat4 u_map_matrix;
+uniform vec2 u_frame_center;
+uniform vec2 u_frame_half_size;
+uniform float u_frame_world_size;
+uniform float u_frame_bearing;
+uniform float u_height_factor;
+void main() {
+  float angle = radians(u_frame_bearing);
+  float cosine = cos(angle);
+  float sine = sin(angle);
+  vec2 frame_offset = (a_position.xy - u_frame_half_size) / u_frame_world_size;
+  vec2 world_offset = vec2(
+    cosine * frame_offset.x - sine * frame_offset.y,
+    sine * frame_offset.x + cosine * frame_offset.y
+  );
+  vec2 world = u_frame_center + world_offset;
+  gl_Position = u_map_matrix * vec4(
+    world,
+    a_position.z * u_height_factor / u_frame_world_size,
+    1.0
+  );
+  v_uv = a_uv;
+  if (abs(a_normal.z) < 0.5) v_uv.y *= u_height_factor;
+  v_world = world;
+  v_normal = normalize(vec3(
+    cosine * a_normal.x - sine * a_normal.y,
+    sine * a_normal.x + cosine * a_normal.y,
+    a_normal.z
+  ));
+}`;
+
+export const BUILDING_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 v_uv;
+in vec2 v_world;
+in vec3 v_normal;
+out vec4 out_color;
+uniform vec4 u_clip;
+uniform vec2 u_cell_size;
+uniform float u_dot_size;
+uniform float u_opacity;
+uniform vec3 u_base_color;
+uniform vec3 u_dot_color;
+uniform int u_fill_visible;
+uniform int u_dots_visible;
+uniform int u_depth_only;
+
+int orderedRank(int column, int row) {
+  int index = row * 2 + column;
+  int ranks[8] = int[8](0, 4, 6, 2, 1, 5, 7, 3);
+  return ranks[index];
+}
+
+void main() {
+  if (v_world.x < u_clip.x || v_world.y < u_clip.y ||
+      v_world.x >= u_clip.z || v_world.y >= u_clip.w) discard;
+  if (u_depth_only == 1) {
+    out_color = vec4(0.0);
+    return;
+  }
+  vec2 local = v_uv - floor(v_uv / u_cell_size) * u_cell_size;
+  int column = clamp(int(floor(local.x / (u_cell_size.x * 0.5))), 0, 1);
+  int row = clamp(int(floor(local.y / (u_cell_size.y * 0.25))), 0, 3);
+  vec2 center = vec2(
+    (float(column) + 0.5) * u_cell_size.x * 0.5,
+    (float(row) + 0.5) * u_cell_size.y * 0.25
+  );
+  bool in_dot = all(lessThanEqual(abs(local - center), vec2(u_dot_size * 0.5)));
+  vec3 light = normalize(vec3(-0.55, -0.75, 0.90));
+  float diffuse = max(0.0, dot(normalize(v_normal), light));
+  int band = diffuse < 0.28 ? 0 : (diffuse < 0.62 ? 1 : 2);
+  if (v_normal.z > 0.5) band = 2;
+  vec3 shadow = u_base_color * 0.82;
+  vec3 highlight = mix(u_base_color, vec3(1.0), 0.12);
+  vec3 surface = band == 0 ? shadow : (band == 1 ? u_base_color : highlight);
+  int coverage = band + 1;
+  bool selected = u_dots_visible == 1 && in_dot && orderedRank(column, row) < coverage;
+  if (u_fill_visible == 0 && !selected) discard;
+  vec3 color = selected ? u_dot_color : surface;
+  out_color = vec4(color, u_opacity);
+}`;
+
+export const BUILDING_EDGE_VERTEX = `#version 300 es
+precision highp float;
+in vec3 a_start;
+in vec3 a_end;
+in vec2 a_corner;
+in float a_strength;
+out vec2 v_world;
+out float v_strength;
+uniform mat4 u_map_matrix;
+uniform vec2 u_frame_center;
+uniform vec2 u_frame_half_size;
+uniform float u_frame_world_size;
+uniform float u_frame_bearing;
+uniform float u_height_factor;
+uniform vec2 u_view_size;
+uniform float u_edge_width;
+
+vec3 worldPosition(vec3 position) {
+  float angle = radians(u_frame_bearing);
+  float cosine = cos(angle);
+  float sine = sin(angle);
+  vec2 frame_offset = (position.xy - u_frame_half_size) / u_frame_world_size;
+  vec2 world_offset = vec2(
+    cosine * frame_offset.x - sine * frame_offset.y,
+    sine * frame_offset.x + cosine * frame_offset.y
+  );
+  return vec3(
+    u_frame_center + world_offset,
+    position.z * u_height_factor / u_frame_world_size
+  );
+}
+
+void main() {
+  vec3 start_world = worldPosition(a_start);
+  vec3 end_world = worldPosition(a_end);
+  vec4 start_clip = u_map_matrix * vec4(start_world, 1.0);
+  vec4 end_clip = u_map_matrix * vec4(end_world, 1.0);
+  vec2 start_ndc = start_clip.xy / start_clip.w;
+  vec2 end_ndc = end_clip.xy / end_clip.w;
+  vec2 pixel_delta = (end_ndc - start_ndc) * u_view_size * 0.5;
+  float pixel_length = length(pixel_delta);
+  vec2 normal = pixel_length > 0.001
+    ? vec2(-pixel_delta.y, pixel_delta.x) / pixel_length
+    : vec2(0.0);
+  vec4 clip = mix(start_clip, end_clip, a_corner.x);
+  float width = u_edge_width * mix(0.72, 1.0, a_strength);
+  vec2 offset_ndc = normal * a_corner.y * width / u_view_size * 2.0;
+  clip.xy += offset_ndc * clip.w;
+  gl_Position = clip;
+  v_world = mix(start_world.xy, end_world.xy, a_corner.x);
+  v_strength = a_strength;
+}`;
+
+export const BUILDING_EDGE_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 v_world;
+in float v_strength;
+out vec4 out_color;
+uniform vec4 u_clip;
+uniform vec2 u_cell_size;
+uniform float u_dot_size;
+uniform float u_pixel_ratio;
+uniform float u_opacity;
+uniform vec3 u_color;
+
+int orderedRank(int column, int row) {
+  int index = row * 2 + column;
+  int ranks[8] = int[8](0, 4, 6, 2, 1, 5, 7, 3);
+  return ranks[index];
+}
+
+void main() {
+  if (v_world.x < u_clip.x || v_world.y < u_clip.y ||
+      v_world.x >= u_clip.z || v_world.y >= u_clip.w) discard;
+  vec2 css_pixel = gl_FragCoord.xy / u_pixel_ratio;
+  vec2 local = css_pixel - floor(css_pixel / u_cell_size) * u_cell_size;
+  int column = clamp(int(floor(local.x / (u_cell_size.x * 0.5))), 0, 1);
+  int row = clamp(int(floor(local.y / (u_cell_size.y * 0.25))), 0, 3);
+  vec2 center = vec2(
+    (float(column) + 0.5) * u_cell_size.x * 0.5,
+    (float(row) + 0.5) * u_cell_size.y * 0.25
+  );
+  bool in_dot = all(lessThanEqual(abs(local - center), vec2(u_dot_size * 0.62)));
+  int coverage = v_strength > 0.9 ? 8 : 6;
+  if (!in_dot || orderedRank(column, row) >= coverage) discard;
+  out_color = vec4(u_color, u_opacity * mix(0.76, 1.0, v_strength));
+}`;
+
 export const BASE_FRAGMENT = `#version 300 es
 precision highp float;
 precision highp int;

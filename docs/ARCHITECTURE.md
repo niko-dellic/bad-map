@@ -14,7 +14,7 @@ the root `bad-map` export.
   serialization, validation, heatmaps, geometry rasterization, compositing,
   and ownership buffers.
 - `src/semantic/` contains source adapters, cartographic ranks, labels, and the
-  semantic basemap rasterizer.
+  semantic basemap rasterizer, including worker-built dotted building meshes.
 - `src/tiles/` owns MVT decoding, requests, and tile caching.
 - `src/render/` contains WebGL layers, shaders, and projection/fog math.
 - `src/themes/` contains built-in themes and theme composition.
@@ -49,6 +49,16 @@ version bump; after `1.0`, semantic versioning governs compatibility.
 `LowResBasemapLike` is intentionally public as the event-target interface.
 Theme composition helpers are also public so applications can derive colors
 that follow the active basemap mode.
+
+The default dotted building renderer reuses the named-source loaders owned by
+the semantic worker. It returns bounded, per-tile indexed mesh batches so the
+main thread only uploads geometry and applies theme, camera, and
+Braille-lattice shaders. A second mesh pass expands intentional roof and
+vertical-corner edges in CSS pixels, then masks them through the same 2×4
+lattice. When pitched coverage exceeds the building tile budget, source-detail
+tiles nearest the camera are retained instead of degrading the whole mesh to a
+lower source zoom. The optional native building style remains a MapLibre
+`fill-extrusion` fallback.
 
 ## Data-layer boundary
 

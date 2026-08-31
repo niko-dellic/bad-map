@@ -30,6 +30,7 @@ export type {
   LowResDataLayerUpdate,
   LowResCameraOptions,
   LowResBuildings3DOptions,
+  LowResBuildings3DStyle,
   LowResError,
   LowResEventMap,
   LowResFeature,

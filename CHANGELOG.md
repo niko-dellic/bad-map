@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## 0.12.0
+
+### Added
+
+- Worker-built, depth-aware dotted 3D building meshes whose roofs and facades
+  use the semantic 2×4 lattice and discrete theme-aware lighting.
+- A `buildings3D.style` option with a `native` MapLibre fallback; `dotted` is
+  now the default whenever 3D buildings are enabled.
+
+### Changed
+
+- 3D buildings are now enabled by default with their fill and edge ink visible;
+  interior surface dots default to off.
+- Dotted buildings now share named-source requests, caching, color mode, cell
+  geometry, and strict-CSP worker configuration with the semantic renderer.
+- Building surfaces now use three chunky flat-lighting tones with restrained
+  dots and Braille-aligned roof/corner ink for clearer silhouettes.
+- Building surface and edge passes now use isolated vertex-array state so they
+  cannot invalidate MapLibre or sibling custom-layer draw calls.
+- The demo and runtime appearance API can independently toggle building fill,
+  dots, and edges and adjust edge weight and height scale.
+- Oversized pitched views now retain source-detail building tiles near the
+  camera instead of intermittently replacing real heights with lower-zoom
+  fallback extrusions.
+
+### Migration
+
+- Applications upgrading from 0.11.x that need the previous no-buildings
+  default should pass `buildings3D: false`. To retain the previous smooth
+  extrusion appearance when buildings are enabled, pass
+  `buildings3D: { visible: true, style: "native" }`.
+
 ## 0.11.0
 
 ### Added

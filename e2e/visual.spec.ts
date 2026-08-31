@@ -312,6 +312,53 @@ test("matches the experimental pitched surface baseline", async ({ page }) => {
   });
 });
 
+test("keeps the dotted building lattice stable on retina displays", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 960, height: 640 },
+    deviceScaleFactor: 2,
+    colorScheme: "dark",
+  });
+  const page = await context.newPage();
+  await prepareVisualPage(page);
+  const generation = await page.evaluate(() => {
+    for (const element of document.querySelectorAll<HTMLElement>(
+      "#top-bar, aside, #readout, nav, .maplibregl-control-container",
+    ))
+      element.style.display = "none";
+    const demo = (
+      window as typeof window & {
+        __badMapDemo: {
+          map: { jumpTo(options: unknown): void };
+          basemap: { setBuildings3DVisible(visible: boolean): void };
+          diagnostics: { lastGeneration: number };
+        };
+      }
+    ).__badMapDemo;
+    demo.basemap.setBuildings3DVisible(true);
+    const previousGeneration = demo.diagnostics.lastGeneration;
+    demo.map.jumpTo({ zoom: 15.5, pitch: 60, bearing: -25 });
+    return previousGeneration;
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              __badMapDemo: { diagnostics: { lastGeneration: number } };
+            }
+          ).__badMapDemo.diagnostics.lastGeneration,
+      ),
+    )
+    .toBeGreaterThan(generation);
+  await expect(page).toHaveScreenshot("nyc-dotted-buildings-retina.png", {
+    animations: "disabled",
+  });
+  await context.close();
+});
+
 test("matches regular and dithered fog at maximum pitch", async ({ page }) => {
   await prepareVisualPage(page);
   const generation = await page.evaluate(() => {
