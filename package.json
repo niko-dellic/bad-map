@@ -85,7 +85,7 @@
     "@mapbox/vector-tile": "^3.0.0",
     "@phosphor-icons/web": "^2.1.2",
     "@playwright/test": "^1.62.1",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.4.0",
     "earcut": "^3.2.3",
     "maplibre-gl": "^6.4.0",
     "pbf": "^5.1.2",
