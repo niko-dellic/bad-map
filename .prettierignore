@@ -1,1 +1,4 @@
 test/fixtures/public-api.d.ts
+
+docs/site/api/
+docs/site/.vitepress/cache/
