@@ -17,8 +17,13 @@ export default defineConfig({
   themeConfig: {
     logo: "/favicon-32x32.png",
     siteTitle: "bad-map",
+    logoLink: "/",
     nav: [
-      { text: "Home", link: "https://bad-map-sigma.vercel.app/" },
+      {
+        text: "Home",
+        link: "https://bad-map-sigma.vercel.app/",
+        target: "_self",
+      },
       { text: "Docs", link: "/" },
       { text: "API", link: "/api/" },
       { text: "Demo", link: "https://bad-map-sigma.vercel.app/demo/" },
