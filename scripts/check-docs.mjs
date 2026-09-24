@@ -142,6 +142,10 @@ try {
         await page.locator(".VPLocalSearchBox .result").first().waitFor();
       }
     }
+    await page.goto(origin + "/docs/");
+    await page.locator(".VPNavBarTitle a").click();
+    await page.getByRole("heading", { name: "bad-map", exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/");
     assert.deepEqual(errors, []);
     await context.close();
   }

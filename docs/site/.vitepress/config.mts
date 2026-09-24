@@ -17,7 +17,7 @@ export default defineConfig({
   themeConfig: {
     logo: "/favicon-32x32.png",
     siteTitle: "bad-map",
-    logoLink: "/",
+    logoLink: { link: "/", target: "_self" },
     nav: [
       {
         text: "Home",
