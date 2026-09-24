@@ -7,6 +7,8 @@ Coarse area fills, ranked square-dot lines, scalar data, and labels are composed
 independently, which leaves ordinary MapLibre and deck.gl layers crisp and
 interactive. Greyscale is the default; full color remains.
 
+[Documentation](https://bad-map-sigma.vercel.app/docs/) · [API reference](https://bad-map-sigma.vercel.app/docs/api/) · [Live demo](https://bad-map-sigma.vercel.app/demo/)
+
 ## Gallery
 
 Every view below uses the semantic low-resolution renderer without fog,

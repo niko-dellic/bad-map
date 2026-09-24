@@ -8,3 +8,7 @@ test-results/
 *.log
 .docs
 .scratch/
+
+docs/site/api/
+docs/site/.vitepress/cache/
+.vercel/
