@@ -675,3 +675,9 @@ See the
 [project roadmap](https://github.com/niko-dellic/bad-map/blob/main/docs/NEXT_STEPS.md)
 for implementation status and remaining production-depth work around terrain,
 animated fields, and dense picking.
+
+### Demo presentation options
+
+Use `/demo/?title=hidden&attribution=hidden` for an embedded presentation without the title/render-status header or map attribution control. These options are independent and default to visible. Search, map interaction, and source attribution metadata remain unchanged.
+
+Add `controls=hidden` to hide the entire toolbar (including search and feature queries), settings sidebar and its toggle, and feature readout. For a map-only portfolio embed, use `/demo/?title=hidden&attribution=hidden&controls=hidden`. Map pan/zoom and parent-provided fullscreen controls remain available.
