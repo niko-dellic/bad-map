@@ -1,0 +1,15 @@
+{
+  "entryPoints": ["src/index.ts"],
+  "tsconfig": "tsconfig.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "out": "docs/site/api",
+  "entryFileName": "index.md",
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+  "parametersFormat": "table",
+  "propertiesFormat": "table",
+  "typeDeclarationFormat": "table"
+}

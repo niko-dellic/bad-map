@@ -1,3 +1,4 @@
+import { followEmbedTheme } from "./embed-theme";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@phosphor-icons/web/regular";
 import { Map, setWorkerUrl } from "maplibre-gl";
@@ -28,6 +29,16 @@ import { ScreenFisheyeLayer } from "./fisheye";
 import "./style.css";
 
 setWorkerUrl(maplibreWorkerUrl);
+
+const embedOptions = new URLSearchParams(location.search);
+if (embedOptions.get("controls") === "hidden") {
+  document.documentElement.dataset.embedControls = "hidden";
+}
+if (embedOptions.get("title") === "hidden") {
+  document
+    .querySelector<HTMLElement>("#top-bar header")
+    ?.setAttribute("hidden", "");
+}
 
 const map = new Map({
   container: "map",
@@ -69,7 +80,11 @@ const buildingsStyle = new URLSearchParams(location.search).get(
   "building-style",
 );
 const basemap = new LowResBasemap({
+  theme: window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light",
   source: BASE_SOURCE,
+  attribution: embedOptions.get("attribution") !== "hidden",
   layers: packDescriptors,
   colorMode: "greyscale",
   labels: false,
@@ -178,6 +193,10 @@ try {
 }
 
 const theme = document.querySelector<HTMLSelectElement>("#theme")!;
+followEmbedTheme((value) => {
+  theme.value = value;
+  basemap.setTheme(value);
+});
 theme.onchange = () => {
   basemap.setTheme(theme.value === "light" ? "light" : "dark");
 };

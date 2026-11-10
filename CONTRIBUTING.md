@@ -64,3 +64,12 @@ fisheye while retaining map-data attribution.
 By participating, you agree to engage respectfully and constructively. Project
 maintainers may edit or remove disruptive content and restrict participation
 when necessary to keep the project welcoming and technically productive.
+
+### Documentation website
+
+`npm run docs:dev` starts the VitePress guide. Run `npm run docs:api` first to
+refresh the generated API pages. Edit user-facing guides in `docs/site/` and
+public API comments in `src/`; generated reference pages are not committed.
+`npm run docs:test` builds the complete site and checks links, search, navigation,
+and light/dark behavior on desktop and mobile. `npm run build:site` combines the
+existing home/demo build with documentation under `/docs/` for Vercel.
